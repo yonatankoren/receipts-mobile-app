@@ -9,6 +9,8 @@ Hebrew text, and extracting structured data. OCR just provides raw text.
 import json
 import os
 import logging
+from typing import Optional
+
 from openai import OpenAI
 from schemas import FieldConfidences
 
@@ -154,7 +156,7 @@ def _error_response(receipt_id: str, error_msg: str) -> dict:
     }
 
 
-def _safe_float(val) -> float | None:
+def _safe_float(val) -> Optional[float]:
     if val is None:
         return None
     try:

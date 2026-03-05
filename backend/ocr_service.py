@@ -10,10 +10,12 @@ Reasons:
   4. Easier to swap OCR provider later without app update.
 """
 
+from typing import List, Optional
+
 from google.cloud import vision
 
 
-def extract_text_from_image(image_bytes: bytes, language_hints: list[str] | None = None) -> str:
+def extract_text_from_image(image_bytes: bytes, language_hints: Optional[List[str]] = None) -> str:
     """
     Run Document Text Detection on raw image bytes.
     Returns the full extracted text string.
