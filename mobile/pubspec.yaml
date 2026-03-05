@@ -15,7 +15,7 @@ dependencies:
   
   # UI
   material_design_icons_flutter: ^7.0.7296
-  intl: ^0.19.0
+  intl: ^0.20.2
   
   # Camera
   camera: ^0.11.0+2

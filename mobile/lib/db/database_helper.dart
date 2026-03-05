@@ -1,9 +1,10 @@
 /// SQLite database helper.
-/// Manages local persistence for receipts and sync jobs.
+/// Manages local persistence for receipts, sync jobs, and expenses.
 /// This is the single source of truth while offline.
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
+import '../models/expense.dart';
 import '../models/receipt.dart';
 import '../models/sync_job.dart';
 
@@ -25,8 +26,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -70,6 +72,9 @@ class DatabaseHelper {
       )
     ''');
 
+    // Expenses table (pending expenses without receipts)
+    await _createExpensesTable(db);
+
     // Indexes for efficient queries
     await db.execute(
         'CREATE INDEX idx_receipts_status ON receipts(status)');
@@ -81,6 +86,27 @@ class DatabaseHelper {
         'CREATE INDEX idx_jobs_receipt ON sync_jobs(receipt_id)');
     await db.execute(
         'CREATE INDEX idx_jobs_type_status ON sync_jobs(job_type, status)');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createExpensesTable(db);
+    }
+  }
+
+  Future<void> _createExpensesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expenses (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        date TEXT NOT NULL,
+        amount REAL NOT NULL,
+        paid_to TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date DESC)');
   }
 
   // ===== RECEIPT OPERATIONS =====
@@ -284,6 +310,99 @@ class DatabaseHelper {
       whereArgs: [cutoff],
     );
     return maps.map((m) => m['image_path'] as String).toList();
+  }
+
+  /// Delete a receipt and its associated sync jobs
+  Future<void> deleteReceipt(String receiptId) async {
+    final db = await database;
+    await db.delete('sync_jobs', where: 'receipt_id = ?', whereArgs: [receiptId]);
+    await db.delete('receipts', where: 'id = ?', whereArgs: [receiptId]);
+  }
+
+  // ===== DUPLICATE DETECTION =====
+
+  /// Find existing receipts that match on merchant + date + amount.
+  /// Uses exact match on date and amount, and substring/contains for merchant
+  /// (to catch "רמי לוי" vs "רמי לוי - סניף תל אביב").
+  /// Excludes the receipt with [excludeId] (the one being checked).
+  Future<List<Receipt>> findDuplicateReceipts({
+    required String? merchantName,
+    required String? receiptDate,
+    required double? totalAmount,
+    String? excludeId,
+  }) async {
+    // Need at least merchant + date + amount to detect duplicates
+    if (merchantName == null || merchantName.isEmpty ||
+        receiptDate == null || receiptDate.isEmpty ||
+        totalAmount == null) {
+      return [];
+    }
+
+    final db = await database;
+
+    // Query for exact date + amount match first, then filter by merchant
+    final maps = await db.query(
+      'receipts',
+      where: "receipt_date = ? AND total_amount = ? "
+          "AND status != 'captured' "
+          "${excludeId != null ? "AND id != ?" : ""}",
+      whereArgs: [
+        receiptDate,
+        totalAmount,
+        if (excludeId != null) excludeId,
+      ],
+    );
+
+    if (maps.isEmpty) return [];
+
+    final candidates = maps.map((m) => Receipt.fromMap(m)).toList();
+
+    // Fuzzy merchant match: substring check in both directions
+    final normalizedInput = merchantName.trim().toLowerCase();
+    return candidates.where((r) {
+      if (r.merchantName == null || r.merchantName!.isEmpty) return false;
+      final normalizedExisting = r.merchantName!.trim().toLowerCase();
+      return normalizedExisting.contains(normalizedInput) ||
+             normalizedInput.contains(normalizedExisting);
+    }).toList();
+  }
+
+  // ===== EXPENSE OPERATIONS =====
+
+  Future<void> insertExpense(Expense expense) async {
+    final db = await database;
+    await db.insert(
+      'expenses',
+      expense.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Expense>> getAllExpenses() async {
+    final db = await database;
+    final maps = await db.query(
+      'expenses',
+      orderBy: 'date DESC',
+    );
+    return maps.map((m) => Expense.fromMap(m)).toList();
+  }
+
+  Future<Expense?> getExpense(String id) async {
+    final db = await database;
+    final maps = await db.query('expenses', where: 'id = ?', whereArgs: [id]);
+    if (maps.isEmpty) return null;
+    return Expense.fromMap(maps.first);
+  }
+
+  Future<void> deleteExpense(String id) async {
+    final db = await database;
+    await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> getExpenseCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM expenses');
+    return (result.first['cnt'] as int?) ?? 0;
   }
 }
 

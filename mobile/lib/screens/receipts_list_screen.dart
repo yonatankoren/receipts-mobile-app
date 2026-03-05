@@ -183,7 +183,6 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
     ThemeData theme,
   ) {
     final statusColor = _statusColor(receipt.status);
-    final statusIcon = _statusIcon(receipt.status);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -294,21 +293,6 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
         return Colors.green;
       case ReceiptStatus.error:
         return Colors.red;
-    }
-  }
-
-  IconData _statusIcon(ReceiptStatus status) {
-    switch (status) {
-      case ReceiptStatus.captured:
-        return Icons.camera_alt;
-      case ReceiptStatus.processing:
-        return Icons.sync;
-      case ReceiptStatus.reviewed:
-        return Icons.check;
-      case ReceiptStatus.synced:
-        return Icons.cloud_done;
-      case ReceiptStatus.error:
-        return Icons.error;
     }
   }
 

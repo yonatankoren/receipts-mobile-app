@@ -7,7 +7,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
-import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 import '../utils/constants.dart';
 

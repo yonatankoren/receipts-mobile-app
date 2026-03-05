@@ -5,4 +5,5 @@ linter:
     prefer_const_constructors: false
     prefer_const_literals_to_create_immutables: false
     use_key_in_widget_constructors: false
+    dangling_library_doc_comments: false
 

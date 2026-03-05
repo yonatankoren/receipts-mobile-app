@@ -1,9 +1,11 @@
 /// App state provider — orchestrates capture flow and manages receipt list.
 /// Uses ChangeNotifier for simple, effective state management.
 
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../db/database_helper.dart';
+import '../models/expense.dart';
 import '../models/receipt.dart';
 import '../models/sync_job.dart';
 import '../services/image_service.dart';
@@ -15,10 +17,12 @@ class AppState extends ChangeNotifier {
   final Uuid _uuid = const Uuid();
 
   List<Receipt> _receipts = [];
+  List<Expense> _expenses = [];
   bool _isLoading = false;
   String? _error;
 
   List<Receipt> get receipts => _receipts;
+  List<Expense> get expenses => _expenses;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -175,6 +179,143 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
     return receipt;
+  }
+
+  // ===== DUPLICATE DETECTION =====
+
+  /// Check if a receipt is a likely duplicate of an existing one.
+  /// Returns the first matching receipt, or null if none found.
+  Future<Receipt?> checkForDuplicate(Receipt receipt) async {
+    final dupes = await _db.findDuplicateReceipts(
+      merchantName: receipt.merchantName,
+      receiptDate: receipt.receiptDate,
+      totalAmount: receipt.totalAmount,
+      excludeId: receipt.id,
+    );
+    return dupes.isNotEmpty ? dupes.first : null;
+  }
+
+  // ===== EXPENSE OPERATIONS =====
+
+  /// Load all pending expenses from DB
+  Future<void> loadExpenses() async {
+    try {
+      _expenses = await _db.getAllExpenses();
+    } catch (e) {
+      debugPrint('AppState: failed to load expenses: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Add a new manual expense (no receipt)
+  Future<Expense> addExpense({
+    required String name,
+    required String date,
+    required double amount,
+    required String paidTo,
+  }) async {
+    final expense = Expense(
+      id: _uuid.v4(),
+      name: name,
+      date: date,
+      amount: amount,
+      paidTo: paidTo,
+    );
+
+    await _db.insertExpense(expense);
+    _expenses.insert(0, expense);
+    // Re-sort by date descending
+    _expenses.sort((a, b) => b.date.compareTo(a.date));
+    notifyListeners();
+
+    debugPrint('AppState: added expense ${expense.id}');
+    return expense;
+  }
+
+  /// Delete a pending expense
+  Future<void> deleteExpense(String expenseId) async {
+    await _db.deleteExpense(expenseId);
+    _expenses.removeWhere((e) => e.id == expenseId);
+    notifyListeners();
+  }
+
+  /// Capture a receipt image linked to an expense.
+  /// Saves image + creates receipt record but does NOT enqueue sync jobs.
+  /// Sync jobs are deferred until the user confirms (after amount check).
+  Future<Receipt> captureReceiptForExpense(String imagePath) async {
+    final receiptId = _uuid.v4();
+    final now = DateTime.now();
+
+    // 1. Save image to app storage
+    final savedPath = await ImageService.instance.saveImage(imagePath, receiptId);
+
+    // 2. Create receipt record (no sync jobs yet)
+    final receipt = Receipt(
+      id: receiptId,
+      captureTimestamp: now,
+      imagePath: savedPath,
+      status: ReceiptStatus.captured,
+    );
+
+    await _db.insertReceipt(receipt);
+    _receipts.insert(0, receipt);
+    notifyListeners();
+
+    debugPrint('AppState: captured receipt for expense, id=$receiptId (no sync jobs yet)');
+    return receipt;
+  }
+
+  /// Confirm expense receipt — enqueue sync jobs and delete the expense.
+  /// Called after user confirms the amount (or picks one in mismatch dialog).
+  Future<void> confirmExpenseReceipt({
+    required String receiptId,
+    required String expenseId,
+    required double chosenAmount,
+  }) async {
+    // Update the receipt with the chosen amount and mark as reviewed
+    final receipt = await _db.getReceipt(receiptId);
+    if (receipt == null) return;
+
+    final updated = receipt.copyWith(
+      totalAmount: chosenAmount,
+      status: ReceiptStatus.reviewed,
+    );
+    await _db.updateReceipt(updated);
+
+    final idx = _receipts.indexWhere((r) => r.id == receiptId);
+    if (idx >= 0) _receipts[idx] = updated;
+
+    // Enqueue sync jobs (upload to Drive + append to Sheets)
+    await SyncEngine.instance.enqueueReceiptJobs(receiptId);
+
+    // Delete the expense
+    await _db.deleteExpense(expenseId);
+    _expenses.removeWhere((e) => e.id == expenseId);
+
+    notifyListeners();
+    debugPrint('AppState: confirmed expense receipt, expense=$expenseId deleted');
+  }
+
+  /// Cancel expense receipt — delete the receipt + image, expense stays.
+  Future<void> cancelExpenseReceipt(String receiptId) async {
+    final receipt = await _db.getReceipt(receiptId);
+    if (receipt != null) {
+      // Delete the local image
+      try {
+        final file = File(receipt.imagePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('AppState: failed to delete image: $e');
+      }
+
+      // Delete receipt from DB
+      await _db.deleteReceipt(receiptId);
+      _receipts.removeWhere((r) => r.id == receiptId);
+      notifyListeners();
+    }
+    debugPrint('AppState: cancelled expense receipt $receiptId');
   }
 }
 

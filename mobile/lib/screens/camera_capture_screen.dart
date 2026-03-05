@@ -7,16 +7,15 @@
 ///   - Gallery fallback for picking existing photos
 ///   - After capture: quick preview → auto-navigate to review
 
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
-import '../services/sync_engine.dart';
 import '../widgets/sync_status_indicator.dart';
 import 'review_and_fix_screen.dart';
 import 'receipts_list_screen.dart';
+import 'expenses_list_screen.dart';
 import 'settings_screen.dart';
 
 class CameraCaptureScreen extends StatefulWidget {
@@ -317,14 +316,14 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
             ),
           ),
 
-          // Bottom bar: gallery + capture + receipts list
+          // Bottom bar: gallery + expenses + capture + receipts
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 24, left: 24, right: 24),
+                padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -333,6 +332,18 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                       icon: Icons.photo_library_outlined,
                       label: 'גלריה',
                       onTap: _pickFromGallery,
+                    ),
+
+                    // Pending expenses
+                    _buildBottomButton(
+                      icon: Icons.pending_actions,
+                      label: 'הוצאות',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ExpensesListScreen(),
+                        ),
+                      ),
                     ),
 
                     // Capture button (big, prominent)

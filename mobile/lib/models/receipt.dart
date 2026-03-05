@@ -170,18 +170,32 @@ class Receipt {
     return map;
   }
 
-  /// Row values matching SHEETS_COLUMNS order for Google Sheets append
+  /// Sheets month value in MM/YYYY format (e.g. "03/2025").
+  String get sheetsMonth {
+    final date = receiptDate != null
+        ? DateTime.tryParse(receiptDate!) ?? captureTimestamp
+        : captureTimestamp;
+    return '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  /// Numeric sort key for the month: YYYYMM (e.g. 202503).
+  int get monthSortKey {
+    final date = receiptDate != null
+        ? DateTime.tryParse(receiptDate!) ?? captureTimestamp
+        : captureTimestamp;
+    return date.year * 100 + date.month;
+  }
+
+  /// Row values matching the 6-column Sheets layout:
+  /// חודש | שם עסק | סכום | מטבע | קטגוריה | קישור לתמונה
   List<dynamic> toSheetsRow() {
     return [
-      id,
-      captureTimestamp.toIso8601String(),
+      sheetsMonth,
       merchantName ?? '',
-      receiptDate ?? '',
       totalAmount?.toString() ?? '',
       currency,
       category ?? '',
       driveFileLink ?? '',
-      overallConfidence?.toStringAsFixed(2) ?? '',
     ];
   }
 }

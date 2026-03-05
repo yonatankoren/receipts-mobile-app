@@ -8,7 +8,6 @@
 ///   - Debug: storage usage, pending jobs, recent errors
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/backend_service.dart';
 import '../services/sheets_service.dart';
