@@ -230,7 +230,9 @@ class DatabaseHelper {
     return null;
   }
 
-  /// Check if a job's predecessor jobs for the same receipt are complete
+  /// Check if a job's predecessor jobs for the same receipt are complete.
+  /// For sheetsAppend, also requires the receipt to be in 'reviewed' or
+  /// 'synced' status — this ensures the user has saved their edits first.
   Future<bool> _areDependenciesMet(SyncJob job) async {
     final db = await database;
 
@@ -261,6 +263,19 @@ class DatabaseHelper {
         if (pJob.status != JobStatus.completed) {
           return false;
         }
+      }
+    }
+
+    // --- Status gate for sheetsAppend ---
+    // Block Sheets write until the user has reviewed (saved) the receipt.
+    // This ensures: (a) user edits are included, (b) gallery screenshots
+    // with sparse OCR data are not written before the user can fix them.
+    if (job.jobType == JobType.sheetsAppend) {
+      final receipt = await getReceipt(job.receiptId);
+      if (receipt == null) return false;
+      if (receipt.status != ReceiptStatus.reviewed &&
+          receipt.status != ReceiptStatus.synced) {
+        return false; // Not yet reviewed by user
       }
     }
 

@@ -263,7 +263,7 @@ class SheetsService {
         cat,
         "=SUMIF('$mainSheetName'!E:E,\"$cat\",'$mainSheetName'!C:C)",
       ]),
-      ['סה"כ', "=SUM('$mainSheetName'!C2:C)"], // Total row
+      ['סה"כ', '=SUM(B2:B10)'], // Total row — sums the SUMIF results above
     ];
 
     final vr = sheets.ValueRange()..values = rows;
@@ -588,6 +588,8 @@ class SheetsService {
   // ───────────────────── Idempotency check ─────────────────────
 
   /// Check if a drive link already exists in column F (idempotency).
+  /// Column F now contains HYPERLINK formulas, so we check if the cell
+  /// value (display text) or the raw formula contains the URL.
   Future<bool> _isDriveLinkInSheet(
     sheets.SheetsApi api,
     String spreadsheetId,
@@ -595,14 +597,20 @@ class SheetsService {
     String driveLink,
   ) async {
     try {
+      // Use FORMULA value render option to see the raw HYPERLINK formula
       final resp = await api.spreadsheets.values.get(
         spreadsheetId,
         '$sheetName!F:F',
+        valueRenderOption: 'FORMULA',
       );
       if (resp.values == null) return false;
       for (final row in resp.values!) {
-        if (row.isNotEmpty && row[0].toString() == driveLink) {
-          return true;
+        if (row.isNotEmpty) {
+          final cell = row[0].toString();
+          // Match raw URL or URL inside HYPERLINK("url","...")
+          if (cell == driveLink || cell.contains(driveLink)) {
+            return true;
+          }
         }
       }
       return false;

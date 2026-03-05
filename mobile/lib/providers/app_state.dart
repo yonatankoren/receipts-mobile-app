@@ -149,10 +149,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Save user edits from the review screen
+  /// Save user edits from the review screen.
+  /// Merges user-editable fields onto the latest DB state so that
+  /// system-managed fields (driveFileId, driveFileLink, rawOcrText, etc.)
+  /// are never accidentally overwritten with stale/null values.
   Future<void> saveReview(Receipt receipt) async {
-    final updated = receipt.copyWith(
-      status: receipt.status == ReceiptStatus.synced
+    // Read the freshest copy from DB (may have driveFileLink set by upload job)
+    final fresh = await _db.getReceipt(receipt.id);
+    final base = fresh ?? receipt;
+
+    final updated = base.copyWith(
+      // User-editable fields — always take from the review screen
+      merchantName: receipt.merchantName,
+      receiptDate: receipt.receiptDate,
+      totalAmount: receipt.totalAmount,
+      currency: receipt.currency,
+      category: receipt.category,
+      status: base.status == ReceiptStatus.synced
           ? ReceiptStatus.synced
           : ReceiptStatus.reviewed,
     );

@@ -189,13 +189,18 @@ class Receipt {
   /// Row values matching the 6-column Sheets layout:
   /// חודש | שם עסק | סכום | מטבע | קטגוריה | קישור לתמונה
   List<dynamic> toSheetsRow() {
+    // Use HYPERLINK formula so the cell shows short text instead of a raw URL
+    final linkCell = (driveFileLink != null && driveFileLink!.isNotEmpty)
+        ? '=HYPERLINK("${driveFileLink!}","צפה בתמונה")'
+        : '';
+
     return [
       sheetsMonth,
       merchantName ?? '',
       totalAmount?.toString() ?? '',
       currency,
       category ?? '',
-      driveFileLink ?? '',
+      linkCell,
     ];
   }
 }
