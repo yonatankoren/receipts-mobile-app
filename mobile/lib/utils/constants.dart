@@ -35,21 +35,28 @@ class AppConstants {
   /// Prefix for per-year totals tab
   static const String totalsTabPrefix = 'סיכום';
 
+  /// Hebrew month names (0-indexed: Jan=0 … Dec=11).
+  static const List<String> hebrewMonthNames = [
+    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר',
+  ];
+
   /// Month background colors (1-indexed: Jan=1 … Dec=12).
-  /// Light pastels in a smooth visual progression.
+  /// Medium-light pastels — saturated enough to visually distinguish months,
+  /// while still readable with black text.
   static const Map<int, List<int>> monthColors = {
-    1:  [0xDC, 0xEE, 0xFB], // Light Blue
-    2:  [0xE8, 0xDE, 0xF8], // Light Lavender
-    3:  [0xFC, 0xE4, 0xEC], // Light Pink
-    4:  [0xFF, 0xF3, 0xE0], // Light Peach
-    5:  [0xFF, 0xFD, 0xE7], // Light Yellow
-    6:  [0xF1, 0xF8, 0xE9], // Light Lime
-    7:  [0xE8, 0xF5, 0xE9], // Light Green
-    8:  [0xE0, 0xF2, 0xF1], // Light Teal
-    9:  [0xE0, 0xF7, 0xFA], // Light Cyan
-    10: [0xE3, 0xF2, 0xFD], // Light Sky
-    11: [0xE8, 0xEA, 0xF6], // Light Indigo
-    12: [0xEC, 0xEF, 0xF1], // Light Grey-Blue
+    1:  [0xBB, 0xDE, 0xFB], // Blue
+    2:  [0xCE, 0xB8, 0xEF], // Lavender
+    3:  [0xF8, 0xBB, 0xD0], // Pink
+    4:  [0xFF, 0xE0, 0xB2], // Peach
+    5:  [0xFF, 0xF5, 0x9D], // Yellow
+    6:  [0xDC, 0xED, 0xC8], // Lime
+    7:  [0xC8, 0xE6, 0xC9], // Green
+    8:  [0xB2, 0xDF, 0xDB], // Teal
+    9:  [0xB2, 0xEB, 0xF2], // Cyan
+    10: [0x90, 0xCA, 0xF9], // Deeper Sky Blue
+    11: [0xC5, 0xCA, 0xE9], // Indigo
+    12: [0xCF, 0xD8, 0xDC], // Grey-Blue
   };
 
   // --- Job queue ---

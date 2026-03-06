@@ -460,24 +460,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
-
-                // Force sync button
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      SyncEngine.instance.runPendingJobs();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('מסנכרן...')),
-                      );
-                    },
-                    icon: const Icon(Icons.sync),
-                    label: const Text('סנכרן עכשיו'),
-                  ),
-                ),
-
                 const SizedBox(height: 32),
               ],
             ),

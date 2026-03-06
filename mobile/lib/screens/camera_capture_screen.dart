@@ -12,6 +12,7 @@ import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
+import '../services/sync_engine.dart';
 import '../widgets/sync_status_indicator.dart';
 import 'review_and_fix_screen.dart';
 import 'receipts_list_screen.dart';
@@ -33,19 +34,47 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   bool _isCapturing = false;
   FlashMode _flashMode = FlashMode.auto;
   String? _error;
+  bool _wasOnline = true;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _wasOnline = SyncEngine.instance.isOnline;
+    SyncEngine.instance.addListener(_onConnectivityChanged);
     _initCamera();
   }
 
   @override
   void dispose() {
+    SyncEngine.instance.removeListener(_onConnectivityChanged);
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
+  }
+
+  void _onConnectivityChanged() {
+    final isOnline = SyncEngine.instance.isOnline;
+    if (isOnline && !_wasOnline && mounted) {
+      // Connection restored — show snackbar
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.wifi, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('החיבור חזר!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
+        ),
+      );
+    }
+    _wasOnline = isOnline;
+    if (mounted) setState(() {});
   }
 
   @override
@@ -251,12 +280,37 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isOnline = SyncEngine.instance.isOnline;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera preview (fills screen)
-          if (_isInitialized && _controller != null)
+          // Main content area: camera preview OR offline message
+          if (!isOnline)
+            // Offline view — centered message
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.wifi_off, color: Colors.white54, size: 72),
+                    SizedBox(height: 20),
+                    Text(
+                      'אין קליטה, נסה שוב מאוחר יותר',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (_isInitialized && _controller != null)
             Positioned.fill(
               child: CameraPreview(_controller!),
             )
@@ -292,12 +346,13 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 child: Row(
                   children: [
-                    // Flash toggle
-                    _buildTopButton(
-                      icon: _flashIcon,
-                      label: _flashLabel,
-                      onTap: _toggleFlash,
-                    ),
+                    // Flash toggle (hidden when offline)
+                    if (isOnline)
+                      _buildTopButton(
+                        icon: _flashIcon,
+                        label: _flashLabel,
+                        onTap: _toggleFlash,
+                      ),
                     const Spacer(),
                     // Sync status
                     const SyncStatusIndicator(),
@@ -327,11 +382,12 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Gallery picker
+                    // Gallery picker (disabled when offline)
                     _buildBottomButton(
                       icon: Icons.photo_library_outlined,
                       label: 'גלריה',
-                      onTap: _pickFromGallery,
+                      onTap: isOnline ? _pickFromGallery : null,
+                      disabled: !isOnline,
                     ),
 
                     // Pending expenses
@@ -346,37 +402,40 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                       ),
                     ),
 
-                    // Capture button (big, prominent)
+                    // Capture button (disabled when offline)
                     GestureDetector(
-                      onTap: _isCapturing ? null : _capturePhoto,
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 4),
-                          color: _isCapturing ? Colors.grey : Colors.white24,
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                            ),
-                            child: _isCapturing
-                                ? const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
+                      onTap: (!isOnline || _isCapturing) ? null : _capturePhoto,
+                      child: Opacity(
+                        opacity: isOnline ? 1.0 : 0.4,
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 4),
+                            color: _isCapturing ? Colors.grey : Colors.white24,
+                          ),
+                          child: Center(
+                            child: Container(
+                              width: 64,
+                              height: 64,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white,
+                              ),
+                              child: _isCapturing
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.camera_alt,
+                                      color: Colors.black87,
+                                      size: 32,
                                     ),
-                                  )
-                                : const Icon(
-                                    Icons.camera_alt,
-                                    color: Colors.black87,
-                                    size: 32,
-                                  ),
+                            ),
                           ),
                         ),
                       ),
@@ -436,28 +495,32 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   Widget _buildBottomButton({
     required IconData icon,
     required String label,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
+    bool disabled = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(16),
+      onTap: disabled ? null : onTap,
+      child: Opacity(
+        opacity: disabled ? 0.4 : 1.0,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: Colors.white, size: 26),
             ),
-            child: Icon(icon, color: Colors.white, size: 26),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-        ],
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -263,6 +263,9 @@ class SheetsService {
   // ─────────────────── Totals tab (סיכום YYYY) ───────────────────
 
   /// Ensure the per-year totals tab exists with SUMIF formulas.
+  /// Creates two side-by-side tables:
+  ///   - Columns A-B: sums per category
+  ///   - Columns D-E: sums per month (column C is a gap)
   Future<void> _ensureTotalsTab(
     sheets.SheetsApi api,
     String spreadsheetId,
@@ -297,30 +300,59 @@ class SheetsService {
     // Get the new sheet's ID
     final totalsSheetId = await _getSheetId(api, spreadsheetId, totalsTabName);
 
-    // Build header + category rows + overall total
+    // Extract the year from expensesTabName (e.g. "הוצאות 2025" → "2025")
+    final year = expensesTabName.split(' ').last;
+
+    // ── Table 1: Category sums (columns A-B) ──
     final categories = AppConstants.categories;
-    final rows = <List<String>>[
+    final catRows = <List<String>>[
       ['קטגוריה', 'סכום'], // Header (row 1)
       ...categories.map((cat) => [
         cat,
         "=SUMIF('$expensesTabName'!E:E,\"$cat\",'$expensesTabName'!C:C)",
       ]),
-      ['סה"כ', '=SUM(B2:B${categories.length + 1})'], // Sum the SUMIF results
+      ['סה"כ', '=SUM(B2:B${categories.length + 1})'],
     ];
 
-    final vr = sheets.ValueRange()..values = rows;
+    final catVr = sheets.ValueRange()..values = catRows;
     await api.spreadsheets.values.update(
-      vr,
+      catVr,
       spreadsheetId,
-      '$totalsTabName!A1:B${rows.length}',
+      '$totalsTabName!A1:B${catRows.length}',
       valueInputOption: 'USER_ENTERED',
     );
 
-    // Format the totals sheet
-    final totalRowIndex = rows.length - 1; // 0-indexed
+    // ── Table 2: Monthly sums (columns D-E) ──
+    final monthNames = AppConstants.hebrewMonthNames;
+    final monthRows = <List<String>>[
+      ['חודש', 'סכום'], // Header (row 1)
+      ...List.generate(12, (i) {
+        final mm = (i + 1).toString().padLeft(2, '0');
+        return [
+          monthNames[i],
+          "=SUMIF('$expensesTabName'!A:A,\"$mm/$year\",'$expensesTabName'!C:C)",
+        ];
+      }),
+      ['סה"כ', '=SUM(E2:E13)'],
+    ];
+
+    final monthVr = sheets.ValueRange()..values = monthRows;
+    await api.spreadsheets.values.update(
+      monthVr,
+      spreadsheetId,
+      '$totalsTabName!D1:E${monthRows.length}',
+      valueInputOption: 'USER_ENTERED',
+    );
+
+    // ── Formatting ──
+    final catTotalRow = catRows.length - 1; // 0-indexed
+    final monthTotalRow = monthRows.length - 1; // 0-indexed (= 13)
+
     await api.spreadsheets.batchUpdate(
       sheets.BatchUpdateSpreadsheetRequest(requests: [
-        // Bold header row
+        // ═══ Category table (A-B) formatting ═══
+
+        // Bold header row (A-B)
         sheets.Request(
           repeatCell: sheets.RepeatCellRequest(
             range: sheets.GridRange(
@@ -346,13 +378,13 @@ class SheetsService {
             fields: 'userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)',
           ),
         ),
-        // Bold total row
+        // Bold category total row
         sheets.Request(
           repeatCell: sheets.RepeatCellRequest(
             range: sheets.GridRange(
               sheetId: totalsSheetId,
-              startRowIndex: totalRowIndex,
-              endRowIndex: totalRowIndex + 1,
+              startRowIndex: catTotalRow,
+              endRowIndex: catTotalRow + 1,
               startColumnIndex: 0,
               endColumnIndex: 2,
             ),
@@ -367,13 +399,13 @@ class SheetsService {
             fields: 'userEnteredFormat(textFormat,backgroundColor)',
           ),
         ),
-        // Borders around everything
+        // Borders around category table
         sheets.Request(
           updateBorders: sheets.UpdateBordersRequest(
             range: sheets.GridRange(
               sheetId: totalsSheetId,
               startRowIndex: 0,
-              endRowIndex: rows.length,
+              endRowIndex: catRows.length,
               startColumnIndex: 0,
               endColumnIndex: 2,
             ),
@@ -385,20 +417,146 @@ class SheetsService {
             innerVertical: _solidBorder(),
           ),
         ),
-        // Thick border above total row
+        // Thick border above category total row
         sheets.Request(
           updateBorders: sheets.UpdateBordersRequest(
             range: sheets.GridRange(
               sheetId: totalsSheetId,
-              startRowIndex: totalRowIndex,
-              endRowIndex: totalRowIndex + 1,
+              startRowIndex: catTotalRow,
+              endRowIndex: catTotalRow + 1,
               startColumnIndex: 0,
               endColumnIndex: 2,
             ),
             top: _thickBorder(),
           ),
         ),
-        // Column widths
+        // Number format for category amounts (column B rows 2+)
+        sheets.Request(
+          repeatCell: sheets.RepeatCellRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: 1,
+              endRowIndex: catRows.length,
+              startColumnIndex: 1,
+              endColumnIndex: 2,
+            ),
+            cell: sheets.CellData(
+              userEnteredFormat: sheets.CellFormat(
+                numberFormat: sheets.NumberFormat(
+                  type: 'NUMBER',
+                  pattern: '#,##0.00',
+                ),
+              ),
+            ),
+            fields: 'userEnteredFormat.numberFormat',
+          ),
+        ),
+
+        // ═══ Monthly table (D-E) formatting ═══
+
+        // Bold header row (D-E)
+        sheets.Request(
+          repeatCell: sheets.RepeatCellRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+              startColumnIndex: 3,
+              endColumnIndex: 5,
+            ),
+            cell: sheets.CellData(
+              userEnteredFormat: sheets.CellFormat(
+                textFormat: sheets.TextFormat(
+                  bold: true,
+                  fontSize: 11,
+                  foregroundColor: sheets.Color(red: 1, green: 1, blue: 1, alpha: 1),
+                ),
+                backgroundColor: sheets.Color(
+                  red: 0.2, green: 0.2, blue: 0.2, alpha: 1.0,
+                ),
+                horizontalAlignment: 'CENTER',
+              ),
+            ),
+            fields: 'userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)',
+          ),
+        ),
+        // Bold monthly total row
+        sheets.Request(
+          repeatCell: sheets.RepeatCellRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: monthTotalRow,
+              endRowIndex: monthTotalRow + 1,
+              startColumnIndex: 3,
+              endColumnIndex: 5,
+            ),
+            cell: sheets.CellData(
+              userEnteredFormat: sheets.CellFormat(
+                textFormat: sheets.TextFormat(bold: true, fontSize: 12),
+                backgroundColor: sheets.Color(
+                  red: 0.93, green: 0.93, blue: 0.93, alpha: 1.0,
+                ),
+              ),
+            ),
+            fields: 'userEnteredFormat(textFormat,backgroundColor)',
+          ),
+        ),
+        // Borders around monthly table
+        sheets.Request(
+          updateBorders: sheets.UpdateBordersRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: 0,
+              endRowIndex: monthRows.length,
+              startColumnIndex: 3,
+              endColumnIndex: 5,
+            ),
+            top: _solidBorder(),
+            bottom: _solidBorder(),
+            left: _solidBorder(),
+            right: _solidBorder(),
+            innerHorizontal: _solidBorder(),
+            innerVertical: _solidBorder(),
+          ),
+        ),
+        // Thick border above monthly total row
+        sheets.Request(
+          updateBorders: sheets.UpdateBordersRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: monthTotalRow,
+              endRowIndex: monthTotalRow + 1,
+              startColumnIndex: 3,
+              endColumnIndex: 5,
+            ),
+            top: _thickBorder(),
+          ),
+        ),
+        // Number format for monthly amounts (column E rows 2+)
+        sheets.Request(
+          repeatCell: sheets.RepeatCellRequest(
+            range: sheets.GridRange(
+              sheetId: totalsSheetId,
+              startRowIndex: 1,
+              endRowIndex: monthRows.length,
+              startColumnIndex: 4,
+              endColumnIndex: 5,
+            ),
+            cell: sheets.CellData(
+              userEnteredFormat: sheets.CellFormat(
+                numberFormat: sheets.NumberFormat(
+                  type: 'NUMBER',
+                  pattern: '#,##0.00',
+                ),
+              ),
+            ),
+            fields: 'userEnteredFormat.numberFormat',
+          ),
+        ),
+
+        // ═══ Shared formatting ═══
+
+        // Column widths: A=140, B=120, C=30(gap), D=100, E=120
         sheets.Request(
           updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(
             range: sheets.DimensionRange(
@@ -423,6 +581,42 @@ class SheetsService {
             fields: 'pixelSize',
           ),
         ),
+        sheets.Request(
+          updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(
+            range: sheets.DimensionRange(
+              sheetId: totalsSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 2,
+              endIndex: 3,
+            ),
+            properties: sheets.DimensionProperties(pixelSize: 30),
+            fields: 'pixelSize',
+          ),
+        ),
+        sheets.Request(
+          updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(
+            range: sheets.DimensionRange(
+              sheetId: totalsSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 3,
+              endIndex: 4,
+            ),
+            properties: sheets.DimensionProperties(pixelSize: 100),
+            fields: 'pixelSize',
+          ),
+        ),
+        sheets.Request(
+          updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(
+            range: sheets.DimensionRange(
+              sheetId: totalsSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 4,
+              endIndex: 5,
+            ),
+            properties: sheets.DimensionProperties(pixelSize: 120),
+            fields: 'pixelSize',
+          ),
+        ),
         // Freeze header
         sheets.Request(
           updateSheetProperties: sheets.UpdateSheetPropertiesRequest(
@@ -431,27 +625,6 @@ class SheetsService {
               gridProperties: sheets.GridProperties(frozenRowCount: 1),
             ),
             fields: 'gridProperties.frozenRowCount',
-          ),
-        ),
-        // Number format for amounts (column B rows 2+)
-        sheets.Request(
-          repeatCell: sheets.RepeatCellRequest(
-            range: sheets.GridRange(
-              sheetId: totalsSheetId,
-              startRowIndex: 1,
-              endRowIndex: rows.length,
-              startColumnIndex: 1,
-              endColumnIndex: 2,
-            ),
-            cell: sheets.CellData(
-              userEnteredFormat: sheets.CellFormat(
-                numberFormat: sheets.NumberFormat(
-                  type: 'NUMBER',
-                  pattern: '#,##0.00',
-                ),
-              ),
-            ),
-            fields: 'userEnteredFormat.numberFormat',
           ),
         ),
       ]),
