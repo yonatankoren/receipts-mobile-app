@@ -222,6 +222,7 @@ class SyncEngine extends ChangeNotifier {
       localPath: receipt.imagePath,
       receiptId: receipt.id,
       monthFolder: receipt.driveFolderName,
+      category: receipt.category ?? 'אחר',
     );
 
     // Update receipt with Drive info

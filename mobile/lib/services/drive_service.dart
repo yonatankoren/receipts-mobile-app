@@ -1,7 +1,8 @@
 /// Google Drive service.
-/// Handles uploading receipt images to organized monthly folders.
-/// Folder structure: Receipts/YYYY-MM/receipt_id.jpg
+/// Handles uploading receipt images to organized folders by month and category.
+/// Folder structure: Receipts/YYYY-MM/category/receipt_id.jpg
 ///
+/// Folders are created lazily — only when a receipt needs them.
 /// Idempotency: checks if file already exists by name before uploading.
 
 import 'dart:io';
@@ -23,6 +24,7 @@ class DriveService {
     required String localPath,
     required String receiptId,
     required String monthFolder, // "YYYY-MM"
+    required String category, // e.g. "מזון", "תחבורה", "אחר"
   }) async {
     final client = await AuthService.instance.getAuthenticatedClient();
     if (client == null) {
@@ -40,16 +42,23 @@ class DriveService {
         'root',
       );
 
-      // 2. Ensure month subfolder exists
+      // 2. Ensure month subfolder exists (created lazily)
       final monthFolderId = await _ensureFolder(
         driveApi,
         monthFolder,
         rootFolderId,
       );
 
-      // 3. Check if file already exists (idempotency)
+      // 3. Ensure category subfolder inside month (created lazily)
+      final categoryFolderId = await _ensureFolder(
+        driveApi,
+        category,
+        monthFolderId,
+      );
+
+      // 4. Check if file already exists (idempotency)
       final existing = await driveApi.files.list(
-        q: "name = '$fileName' and '$monthFolderId' in parents and trashed = false",
+        q: "name = '$fileName' and '$categoryFolderId' in parents and trashed = false",
         spaces: 'drive',
         $fields: 'files(id, webViewLink)',
       );
@@ -63,7 +72,7 @@ class DriveService {
         );
       }
 
-      // 4. Upload the file
+      // 5. Upload the file into the category subfolder
       final localFile = File(localPath);
       if (!await localFile.exists()) {
         throw Exception('Local image not found: $localPath');
@@ -72,7 +81,7 @@ class DriveService {
       final media = drive.Media(localFile.openRead(), await localFile.length());
       final driveFile = drive.File()
         ..name = fileName
-        ..parents = [monthFolderId]
+        ..parents = [categoryFolderId]
         ..mimeType = 'image/jpeg';
 
       final uploaded = await driveApi.files.create(
@@ -81,7 +90,7 @@ class DriveService {
         $fields: 'id, webViewLink',
       );
 
-      debugPrint('Drive: uploaded ${uploaded.id}');
+      debugPrint('Drive: uploaded ${uploaded.id} → $monthFolder/$category/');
       return (
         fileId: uploaded.id!,
         fileLink: uploaded.webViewLink ?? 'https://drive.google.com/file/d/${uploaded.id}/view',

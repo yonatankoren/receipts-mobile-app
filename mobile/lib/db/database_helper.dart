@@ -266,11 +266,15 @@ class DatabaseHelper {
       }
     }
 
-    // --- Status gate for sheetsAppend ---
-    // Block Sheets write until the user has reviewed (saved) the receipt.
-    // This ensures: (a) user edits are included, (b) gallery screenshots
-    // with sparse OCR data are not written before the user can fix them.
-    if (job.jobType == JobType.sheetsAppend) {
+    // --- Status gate for uploadImage and sheetsAppend ---
+    // Block Drive upload and Sheets write until the user has reviewed (saved)
+    // the receipt. This ensures:
+    //   (a) user edits (merchant, category, amount) are included
+    //   (b) Drive upload uses the confirmed category for folder placement
+    //   (c) gallery screenshots with sparse OCR data are not written prematurely
+    // processReceipt remains ungated so OCR results appear on the review screen.
+    if (job.jobType == JobType.uploadImage ||
+        job.jobType == JobType.sheetsAppend) {
       final receipt = await getReceipt(job.receiptId);
       if (receipt == null) return false;
       if (receipt.status != ReceiptStatus.reviewed &&
