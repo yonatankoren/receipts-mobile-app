@@ -78,6 +78,14 @@ class SheetsService {
       // 2. Ensure the year's totals tab exists with SUMIF formulas
       await _ensureTotalsTab(api, spreadsheetId, expensesTab, totalsTab);
 
+      // 2b. Ensure this receipt's category has a row in the totals tab
+      final receiptCategory = receipt.category;
+      if (receiptCategory != null && receiptCategory.isNotEmpty) {
+        await _ensureCategoryInTotals(
+          api, spreadsheetId, totalsTab, expensesTab, receiptCategory,
+        );
+      }
+
       // 3. Idempotency: check drive link in column F
       if (receipt.driveFileLink != null && receipt.driveFileLink!.isNotEmpty) {
         final dup = await _isDriveLinkInSheet(
@@ -262,10 +270,13 @@ class SheetsService {
 
   // ─────────────────── Totals tab (סיכום YYYY) ───────────────────
 
-  /// Ensure the per-year totals tab exists with SUMIF formulas.
+  /// Ensure the per-year totals tab exists.
   /// Creates two side-by-side tables:
-  ///   - Columns A-B: sums per category
+  ///   - Columns A-B: sums per category (starts empty — rows added dynamically)
   ///   - Columns D-E: sums per month (column C is a gap)
+  ///
+  /// Category rows are added on-demand by [_ensureCategoryInTotals] when
+  /// a receipt with a new category is first appended.
   Future<void> _ensureTotalsTab(
     sheets.SheetsApi api,
     String spreadsheetId,
@@ -303,15 +314,11 @@ class SheetsService {
     // Extract the year from expensesTabName (e.g. "הוצאות 2025" → "2025")
     final year = expensesTabName.split(' ').last;
 
-    // ── Table 1: Category sums (columns A-B) ──
-    final categories = AppConstants.categories;
+    // ── Table 1: Category sums (columns A-B) — header + total only ──
+    // Category rows will be added dynamically by _ensureCategoryInTotals.
     final catRows = <List<String>>[
-      ['קטגוריה', 'סכום'], // Header (row 1)
-      ...categories.map((cat) => [
-        cat,
-        "=SUMIF('$expensesTabName'!E:E,\"$cat\",'$expensesTabName'!C:C)",
-      ]),
-      ['סה"כ', '=SUM(B2:B${categories.length + 1})'],
+      ['קטגוריה', 'סכום'],       // Header (row 1)
+      ['סה"כ', '=SUM(B3:B3)'],  // Total  (row 2) — expands as categories are added
     ];
 
     final catVr = sheets.ValueRange()..values = catRows;
@@ -345,12 +352,11 @@ class SheetsService {
     );
 
     // ── Formatting ──
-    final catTotalRow = catRows.length - 1; // 0-indexed
     final monthTotalRow = monthRows.length - 1; // 0-indexed (= 13)
 
     await api.spreadsheets.batchUpdate(
       sheets.BatchUpdateSpreadsheetRequest(requests: [
-        // ═══ Category table (A-B) formatting ═══
+        // ═══ Category table (A-B) initial formatting ═══
 
         // Bold header row (A-B)
         sheets.Request(
@@ -378,13 +384,13 @@ class SheetsService {
             fields: 'userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)',
           ),
         ),
-        // Bold category total row
+        // Bold total row (row 2 = index 1)
         sheets.Request(
           repeatCell: sheets.RepeatCellRequest(
             range: sheets.GridRange(
               sheetId: totalsSheetId,
-              startRowIndex: catTotalRow,
-              endRowIndex: catTotalRow + 1,
+              startRowIndex: 1,
+              endRowIndex: 2,
               startColumnIndex: 0,
               endColumnIndex: 2,
             ),
@@ -394,18 +400,22 @@ class SheetsService {
                 backgroundColor: sheets.Color(
                   red: 0.93, green: 0.93, blue: 0.93, alpha: 1.0,
                 ),
+                numberFormat: sheets.NumberFormat(
+                  type: 'NUMBER',
+                  pattern: '#,##0.00',
+                ),
               ),
             ),
-            fields: 'userEnteredFormat(textFormat,backgroundColor)',
+            fields: 'userEnteredFormat(textFormat,backgroundColor,numberFormat)',
           ),
         ),
-        // Borders around category table
+        // Borders around initial category table (header + total = 2 rows)
         sheets.Request(
           updateBorders: sheets.UpdateBordersRequest(
             range: sheets.GridRange(
               sheetId: totalsSheetId,
               startRowIndex: 0,
-              endRowIndex: catRows.length,
+              endRowIndex: 2,
               startColumnIndex: 0,
               endColumnIndex: 2,
             ),
@@ -413,42 +423,8 @@ class SheetsService {
             bottom: _solidBorder(),
             left: _solidBorder(),
             right: _solidBorder(),
-            innerHorizontal: _solidBorder(),
+            innerHorizontal: _thickBorder(),
             innerVertical: _solidBorder(),
-          ),
-        ),
-        // Thick border above category total row
-        sheets.Request(
-          updateBorders: sheets.UpdateBordersRequest(
-            range: sheets.GridRange(
-              sheetId: totalsSheetId,
-              startRowIndex: catTotalRow,
-              endRowIndex: catTotalRow + 1,
-              startColumnIndex: 0,
-              endColumnIndex: 2,
-            ),
-            top: _thickBorder(),
-          ),
-        ),
-        // Number format for category amounts (column B rows 2+)
-        sheets.Request(
-          repeatCell: sheets.RepeatCellRequest(
-            range: sheets.GridRange(
-              sheetId: totalsSheetId,
-              startRowIndex: 1,
-              endRowIndex: catRows.length,
-              startColumnIndex: 1,
-              endColumnIndex: 2,
-            ),
-            cell: sheets.CellData(
-              userEnteredFormat: sheets.CellFormat(
-                numberFormat: sheets.NumberFormat(
-                  type: 'NUMBER',
-                  pattern: '#,##0.00',
-                ),
-              ),
-            ),
-            fields: 'userEnteredFormat.numberFormat',
           ),
         ),
 
@@ -556,7 +532,7 @@ class SheetsService {
 
         // ═══ Shared formatting ═══
 
-        // Column widths: A=140, B=120, C=30(gap), D=100, E=120
+        // Column widths: A=160, B=120, C=30(gap), D=100, E=120
         sheets.Request(
           updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(
             range: sheets.DimensionRange(
@@ -565,7 +541,7 @@ class SheetsService {
               startIndex: 0,
               endIndex: 1,
             ),
-            properties: sheets.DimensionProperties(pixelSize: 140),
+            properties: sheets.DimensionProperties(pixelSize: 160),
             fields: 'pixelSize',
           ),
         ),
@@ -632,6 +608,186 @@ class SheetsService {
     );
 
     debugPrint('Sheets: created and formatted totals tab "$totalsTabName"');
+  }
+
+  /// Ensure a category row exists in the totals tab.
+  /// If not, insert it in alphabetical order with a SUMIF formula,
+  /// then update the total row formula and apply formatting.
+  Future<void> _ensureCategoryInTotals(
+    sheets.SheetsApi api,
+    String spreadsheetId,
+    String totalsTabName,
+    String expensesTabName,
+    String category,
+  ) async {
+    if (category.isEmpty) return;
+
+    try {
+      // 1. Read column A to find existing rows
+      final resp = await api.spreadsheets.values.get(
+        spreadsheetId,
+        '$totalsTabName!A:A',
+      );
+      final values = resp.values ?? [];
+      if (values.isEmpty) return; // Malformed tab
+
+      // 2. Find the total row and existing categories
+      int totalRowIndex = -1; // 0-indexed position in values list
+      final existingCategories = <String>[];
+
+      for (int i = 1; i < values.length; i++) {
+        // Skip header (row 0)
+        final cellVal = values[i].isNotEmpty ? values[i][0].toString() : '';
+        if (cellVal.contains('סה"כ') || cellVal.contains("סה\"כ")) {
+          totalRowIndex = i;
+          break;
+        }
+        if (cellVal.isNotEmpty) {
+          existingCategories.add(cellVal);
+        }
+      }
+
+      if (totalRowIndex == -1) return; // No total row found
+
+      // 3. Check if category already exists
+      if (existingCategories.contains(category)) return;
+
+      // 4. Find alphabetical insertion position
+      int insertPos = 0; // Position within the category list
+      for (int i = 0; i < existingCategories.length; i++) {
+        if (category.compareTo(existingCategories[i]) > 0) {
+          insertPos = i + 1;
+        } else {
+          break;
+        }
+      }
+
+      // Convert to 1-based sheet row: header=1, first category=2
+      final insertRow = insertPos + 2;
+
+      // 5. Get sheet ID and insert a blank row
+      final sheetId = await _getSheetId(api, spreadsheetId, totalsTabName);
+      await _insertRow(api, spreadsheetId, sheetId, insertRow);
+
+      // 6. Write category name + SUMIF formula
+      final formula =
+          "=SUMIF('$expensesTabName'!E:E,\"$category\",'$expensesTabName'!C:C)";
+      final vr = sheets.ValueRange()
+        ..values = [
+          [category, formula]
+        ];
+      await api.spreadsheets.values.update(
+        vr,
+        spreadsheetId,
+        '$totalsTabName!A$insertRow:B$insertRow',
+        valueInputOption: 'USER_ENTERED',
+      );
+
+      // 7. Update total row (it shifted down by 1)
+      final newTotalRow = totalRowIndex + 2; // +1 for 1-based, +1 for shift
+      final totalFormula = '=SUM(B2:B${newTotalRow - 1})';
+      final totalVr = sheets.ValueRange()
+        ..values = [
+          ['סה"כ', totalFormula]
+        ];
+      await api.spreadsheets.values.update(
+        totalVr,
+        spreadsheetId,
+        '$totalsTabName!A$newTotalRow:B$newTotalRow',
+        valueInputOption: 'USER_ENTERED',
+      );
+
+      // 8. Format the new row + total row + borders
+      await api.spreadsheets.batchUpdate(
+        sheets.BatchUpdateSpreadsheetRequest(requests: [
+          // Number format for the new amount cell
+          sheets.Request(
+            repeatCell: sheets.RepeatCellRequest(
+              range: sheets.GridRange(
+                sheetId: sheetId,
+                startRowIndex: insertRow - 1, // 0-indexed
+                endRowIndex: insertRow,
+                startColumnIndex: 1,
+                endColumnIndex: 2,
+              ),
+              cell: sheets.CellData(
+                userEnteredFormat: sheets.CellFormat(
+                  numberFormat: sheets.NumberFormat(
+                    type: 'NUMBER',
+                    pattern: '#,##0.00',
+                  ),
+                ),
+              ),
+              fields: 'userEnteredFormat.numberFormat',
+            ),
+          ),
+          // Bold + gray bg for total row
+          sheets.Request(
+            repeatCell: sheets.RepeatCellRequest(
+              range: sheets.GridRange(
+                sheetId: sheetId,
+                startRowIndex: newTotalRow - 1, // 0-indexed
+                endRowIndex: newTotalRow,
+                startColumnIndex: 0,
+                endColumnIndex: 2,
+              ),
+              cell: sheets.CellData(
+                userEnteredFormat: sheets.CellFormat(
+                  textFormat: sheets.TextFormat(bold: true, fontSize: 12),
+                  backgroundColor: sheets.Color(
+                    red: 0.93, green: 0.93, blue: 0.93, alpha: 1.0,
+                  ),
+                  numberFormat: sheets.NumberFormat(
+                    type: 'NUMBER',
+                    pattern: '#,##0.00',
+                  ),
+                ),
+              ),
+              fields:
+                  'userEnteredFormat(textFormat,backgroundColor,numberFormat)',
+            ),
+          ),
+          // Borders around entire category table (header through total)
+          sheets.Request(
+            updateBorders: sheets.UpdateBordersRequest(
+              range: sheets.GridRange(
+                sheetId: sheetId,
+                startRowIndex: 0,
+                endRowIndex: newTotalRow, // 0-indexed end (exclusive)
+                startColumnIndex: 0,
+                endColumnIndex: 2,
+              ),
+              top: _solidBorder(),
+              bottom: _solidBorder(),
+              left: _solidBorder(),
+              right: _solidBorder(),
+              innerHorizontal: _solidBorder(),
+              innerVertical: _solidBorder(),
+            ),
+          ),
+          // Thick border above total row
+          sheets.Request(
+            updateBorders: sheets.UpdateBordersRequest(
+              range: sheets.GridRange(
+                sheetId: sheetId,
+                startRowIndex: newTotalRow - 1, // 0-indexed
+                endRowIndex: newTotalRow,
+                startColumnIndex: 0,
+                endColumnIndex: 2,
+              ),
+              top: _thickBorder(),
+            ),
+          ),
+        ]),
+        spreadsheetId,
+      );
+
+      debugPrint(
+        'Sheets: added category "$category" at row $insertRow in "$totalsTabName"',
+      );
+    } catch (e) {
+      debugPrint('Sheets: failed to add category to totals: $e');
+    }
   }
 
   // ────────────────── Sorted insertion logic ──────────────────

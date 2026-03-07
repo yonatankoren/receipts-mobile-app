@@ -64,17 +64,29 @@ class AppConstants {
   static const Duration initialRetryDelay = Duration(seconds: 5);
   static const double retryBackoffMultiplier = 2.0;
 
-  // --- Categories (Hebrew) ---
+  // --- Categories (Hebrew, alphabetical) ---
   static const List<String> categories = [
-    'מזון',
-    'מסעדות',
-    'תחבורה',
-    'דלק',
-    'קניות',
-    'בריאות',
-    'חשבונות',
-    'בילויים',
     'אחר',
+    'ביגוד',
+    'ביטוחים',
+    'בילויים',
+    'בית',
+    'בריאות',
+    'הדרכה והתפתחות',
+    'הוצאות משרדיות',
+    'חשבונות',
+    'טיולים',
+    'טיפוח',
+    'טכנולוגיה',
+    'מזון',
+    'פנאי',
+    'פרסום',
+    'קניות',
+    'רכב ודלק',
+    'שכירות',
+    'תחבורה ציבורית',
+    'תחזוקה',
+    'תקשורת',
   ];
 
   // --- Google OAuth Scopes ---

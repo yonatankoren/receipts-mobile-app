@@ -338,6 +338,22 @@ class DatabaseHelper {
     await db.delete('receipts', where: 'id = ?', whereArgs: [receiptId]);
   }
 
+  // ===== CATEGORY STATS =====
+
+  /// Get the most frequently used categories, ordered by usage count desc.
+  Future<List<String>> getTopCategories({int limit = 3}) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      "SELECT category, COUNT(*) as cnt FROM receipts "
+      "WHERE category IS NOT NULL AND category != '' "
+      "GROUP BY category "
+      "ORDER BY cnt DESC "
+      "LIMIT ?",
+      [limit],
+    );
+    return result.map((m) => m['category'] as String).toList();
+  }
+
   // ===== DUPLICATE DETECTION =====
 
   /// Find existing receipts that match on date + amount (same day, same sum).

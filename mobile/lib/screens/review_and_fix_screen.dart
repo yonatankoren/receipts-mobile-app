@@ -18,6 +18,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../db/database_helper.dart';
 import '../models/receipt.dart';
 import '../providers/app_state.dart';
 import '../utils/constants.dart';
@@ -54,13 +55,24 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
   final _currencyController = TextEditingController();
   String? _selectedCategory;
 
+  /// Top 3 most-used categories (loaded from DB).
+  List<String> _topCategories = [];
+
   /// Whether this screen is in expense-linking mode
   bool get _isExpenseMode => widget.linkedExpenseId != null;
 
   @override
   void initState() {
     super.initState();
+    _loadTopCategories();
     _loadReceipt();
+  }
+
+  Future<void> _loadTopCategories() async {
+    final top = await DatabaseHelper.instance.getTopCategories(limit: 3);
+    if (mounted) {
+      setState(() => _topCategories = top);
+    }
   }
 
   @override
@@ -731,32 +743,28 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Category dropdown
-          InputDecorator(
-            decoration: InputDecoration(
-              labelText: 'קטגוריה',
-              prefixIcon: const Icon(Icons.category),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+          // Category picker — tap to open bottom sheet
+          GestureDetector(
+            onTap: _showCategoryPicker,
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: 'קטגוריה',
+                prefixIcon: const Icon(Icons.category),
+                suffixIcon: const Icon(Icons.arrow_drop_down),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
               ),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                value: _selectedCategory,
-                isExpanded: true,
-                hint: const Text('בחר קטגוריה'),
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('ללא'),
-                  ),
-                  ...AppConstants.categories.map(
-                    (cat) => DropdownMenuItem(value: cat, child: Text(cat)),
-                  ),
-                ],
-                onChanged: (val) => setState(() => _selectedCategory = val),
+              child: Text(
+                _selectedCategory ?? 'בחר קטגוריה',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: _selectedCategory != null
+                      ? Colors.black87
+                      : Colors.grey.shade500,
+                ),
               ),
             ),
           ),
@@ -767,6 +775,130 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           const SizedBox(height: 80), // Space for bottom bar
         ],
       ),
+    );
+  }
+
+  /// Show a bottom-sheet category picker.
+  /// Layout: ללא → top 3 (★) → divider → all categories alphabetically
+  /// (including the top 3 in their normal alphabetical position).
+  void _showCategoryPicker() {
+    final topCats = _topCategories
+        .where((c) => AppConstants.categories.contains(c))
+        .take(3)
+        .toList();
+
+    // Handle orphan category from old data
+    final hasOrphan = _selectedCategory != null &&
+        !AppConstants.categories.contains(_selectedCategory);
+
+    showModalBottomSheet<String?>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.55,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          expand: false,
+          builder: (_, scrollController) {
+            return Column(
+              children: [
+                // Handle bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const Text('בחר קטגוריה',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    children: [
+                      // "ללא" option
+                      _categoryTile(null, 'ללא', isSelected: _selectedCategory == null),
+
+                      // Orphan category (from old data)
+                      if (hasOrphan)
+                        _categoryTile(_selectedCategory, _selectedCategory!,
+                            isSelected: true, italic: true),
+
+                      // Top 3 most-used with star
+                      if (topCats.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(right: 16, top: 8, bottom: 4),
+                          child: Text('נפוצות',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w500)),
+                        ),
+                        ...topCats.map((cat) => _categoryTile(cat, cat,
+                            isSelected: _selectedCategory == cat, star: true)),
+                        const Divider(height: 16),
+                      ],
+
+                      // All categories alphabetically (including top 3)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 16, top: 4, bottom: 4),
+                        child: Text('כל הקטגוריות',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w500)),
+                      ),
+                      ...AppConstants.categories.map((cat) => _categoryTile(
+                          cat, cat,
+                          isSelected: _selectedCategory == cat)),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).then((value) {
+      // value is non-null only when explicitly popped with a value
+      // (including the special '__null__' sentinel for "ללא")
+    });
+  }
+
+  Widget _categoryTile(String? value, String label,
+      {bool isSelected = false, bool star = false, bool italic = false}) {
+    return ListTile(
+      dense: true,
+      selected: isSelected,
+      selectedTileColor: Colors.blue.shade50,
+      leading: star
+          ? Icon(Icons.star_rounded, size: 18, color: Colors.amber.shade700)
+          : null,
+      title: Text(
+        label,
+        style: TextStyle(
+          fontSize: 16,
+          fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: Colors.blue.shade700, size: 20)
+          : null,
+      onTap: () {
+        setState(() => _selectedCategory = value);
+        Navigator.pop(context);
+      },
     );
   }
 
