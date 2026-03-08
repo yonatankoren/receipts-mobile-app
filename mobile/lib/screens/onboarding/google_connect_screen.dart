@@ -220,7 +220,7 @@ class _GoogleConnectScreenState extends State<GoogleConnectScreen> {
 
               // Title
               Text(
-                'ניהול קבלות',
+                'קבלות: ניהול הוצאות קליל',
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onSurface,
@@ -231,7 +231,7 @@ class _GoogleConnectScreenState extends State<GoogleConnectScreen> {
 
               // Subtitle
               Text(
-                'צלמו קבלות, שמרו אותן בסדר\nוראו את כל ההוצאות במקום אחד.',
+                'צלמו קבלות, שמרו אותן \nוראו את כל ההוצאות במקום אחד.',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   height: 1.5,

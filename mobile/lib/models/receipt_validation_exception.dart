@@ -32,3 +32,4 @@ class ReceiptValidationException implements Exception {
       'ReceiptValidationException($status, $reason): $messageHe';
 }
 
+

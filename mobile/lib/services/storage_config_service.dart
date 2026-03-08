@@ -195,3 +195,4 @@ class ValidationResult {
   bool get allOk => folderOk && sheetOk;
 }
 
+
