@@ -1,8 +1,9 @@
 /// Storage Setup Screen — onboarding step after Google sign-in.
 ///
-/// Shows a welcome message in Hebrew, lets the user choose where to create
-/// the "הוצאות" folder, and creates both the Drive folder and a Google Sheets
-/// spreadsheet inside it. Saves all IDs to StorageConfigService.
+/// Shows a warm welcome message in Hebrew, then creates a "הוצאות" folder
+/// in the user's Google Drive root along with a Sheets spreadsheet inside it.
+/// The user can later move the folder anywhere in their Drive — the app
+/// references it by ID, so it keeps working regardless of location.
 
 import 'package:flutter/material.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -10,7 +11,6 @@ import 'package:googleapis/sheets/v4.dart' as sheets;
 import '../../services/auth_service.dart';
 import '../../services/storage_config_service.dart';
 import '../../utils/constants.dart';
-import '../../widgets/drive_folder_picker.dart';
 import '../camera_capture_screen.dart';
 
 class StorageSetupScreen extends StatefulWidget {
@@ -24,20 +24,8 @@ class StorageSetupScreen extends StatefulWidget {
 }
 
 class _StorageSetupScreenState extends State<StorageSetupScreen> {
-  String _parentFolderId = 'root';
-  String _parentFolderName = 'האחסון שלי';
   bool _isCreating = false;
   String? _error;
-
-  Future<void> _pickParentFolder() async {
-    final result = await showDriveFolderPicker(context);
-    if (result != null && mounted) {
-      setState(() {
-        _parentFolderId = result.folderId;
-        _parentFolderName = result.folderName;
-      });
-    }
-  }
 
   Future<void> _createResources() async {
     setState(() {
@@ -54,12 +42,12 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
       try {
         final driveApi = drive.DriveApi(client);
 
-        // 1. Create the "הוצאות" folder
+        // 1. Create the "הוצאות" folder in Drive root
         final folderName = AppConstants.driveRootFolderDefaultName;
         final folder = drive.File()
           ..name = folderName
           ..mimeType = 'application/vnd.google-apps.folder'
-          ..parents = [_parentFolderId];
+          ..parents = ['root'];
 
         final createdFolder = await driveApi.files.create(
           folder,
@@ -120,8 +108,6 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
         await configService.setFolderConfig(
           folderId: createdFolder.id!,
           folderName: folderName,
-          parentFolderId:
-              _parentFolderId == 'root' ? null : _parentFolderId,
         );
 
         await configService.setSpreadsheetConfig(
@@ -180,7 +166,7 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
             ),
             const SizedBox(height: 28),
             Text(
-              'יוצר את תיקיית ההוצאות...',
+              'מכינים הכל בשבילכם...',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -188,7 +174,7 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'תיקיית Google Drive וגיליון Google Sheets\nנוצרים עבורכם כעת.',
+              'יוצרים תיקייה וגיליון ב-Google Drive.\nזה ייקח רק רגע.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.5,
@@ -207,30 +193,30 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
           // Icon
           Center(
             child: Container(
-              width: 80,
-              height: 80,
+              width: 88,
+              height: 88,
               decoration: BoxDecoration(
                 color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
               ),
               child: Icon(
-                Icons.folder_special,
-                size: 42,
+                widget.isRelink ? Icons.refresh : Icons.auto_awesome,
+                size: 44,
                 color: theme.colorScheme.primary,
               ),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
 
           // Welcome text or relink message
           if (widget.isRelink) ...[
             Text(
-              'האחסון לא נגיש',
+              'צריך לחבר מחדש',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: theme.colorScheme.error,
@@ -239,7 +225,8 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'התיקייה או הגיליון שהיו מקושרים לאפליקציה אינם נגישים יותר.\nניצור עבורכם חדשים.',
+              'לא הצלחנו לגשת לתיקייה או לגיליון שהיו מקושרים.\n'
+              'לא נורא — ניצור חדשים ותוכלו להמשיך כרגיל.',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.6,
@@ -248,7 +235,7 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
             ),
           ] else ...[
             Text(
-              'ברוכים הבאים!',
+              'כמעט מוכנים! 🎉',
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -256,12 +243,14 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'לאחר לחיצה על המשך ניצור עבורכם תיקיית Google Drive בשם \'הוצאות\'.\n'
-              'כרגע התיקייה ריקה. כאשר תוסיפו קבלות הן יופיעו בתיקייה, מסודרות על פי חודש וקטגוריה.\n'
-              'בנוסף, בתיקייה תוכלו למצוא גיליון Google Sheets שירכז עבורכם את המידע על הוצאותיכם.',
+              'עוד שנייה ותוכלו להתחיל לצלם קבלות.\n\n'
+              'אנחנו ניצור לכם תיקייה בשם "הוצאות" ב-Google Drive '
+              'שתכיל את כל הקבלות, מסודרות לפי חודש וקטגוריה.\n'
+              'בתוכה יהיה גם גיליון Google Sheets שירכז את כל ההוצאות במקום אחד — '
+              'ככה תמיד תדעו בדיוק לאן הכסף הולך.',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
-                height: 1.6,
+                height: 1.7,
               ),
               textAlign: TextAlign.center,
             ),
@@ -269,105 +258,56 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
 
           const SizedBox(height: 32),
 
-          // Location card
+          // What will be created — visual summary
           Card(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
             ),
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'מיקום התיקייה',
+                    'מה ייווצר?',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Current location display
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.folder,
-                          size: 20,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '$_parentFolderName / ${AppConstants.driveRootFolderDefaultName}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Change location button
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton.icon(
-                      onPressed: _pickParentFolder,
-                      icon: const Icon(Icons.edit_location_alt, size: 18),
-                      label: const Text('שינוי מיקום'),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // What will be created info
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
+                  const SizedBox(height: 16),
                   _buildInfoRow(
                     theme,
                     Icons.folder,
                     'תיקיית Drive',
-                    AppConstants.driveRootFolderDefaultName,
+                    '"${AppConstants.driveRootFolderDefaultName}"',
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _buildInfoRow(
                     theme,
                     Icons.table_chart,
                     'גיליון Sheets',
-                    AppConstants.spreadsheetDefaultName,
+                    '"${AppConstants.spreadsheetDefaultName}"',
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'התיקייה תיווצר ב-Drive הראשי. אפשר להזיז אותה אחר כך לאן שתרצו.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -417,9 +357,9 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: const Text(
-                'המשך',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              child: Text(
+                widget.isRelink ? 'צור מחדש והמשך' : 'בואו נתחיל!',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -438,22 +378,23 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
   ) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: theme.colorScheme.primary),
-        const SizedBox(width: 8),
+        Icon(icon, size: 22, color: theme.colorScheme.primary),
+        const SizedBox(width: 10),
         Text(
           '$label: ',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.bold,
+        Flexible(
+          child: Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ],
     );
   }
 }
-

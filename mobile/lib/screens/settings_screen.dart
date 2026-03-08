@@ -16,8 +16,6 @@ import '../services/sync_engine.dart';
 import '../services/image_service.dart';
 import '../db/database_helper.dart';
 import '../utils/constants.dart';
-import '../widgets/drive_folder_picker.dart';
-
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -52,25 +50,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _backendHealthy = healthy;
         _isLoading = false;
       });
-    }
-  }
-
-  Future<void> _changeFolder() async {
-    final result = await showDriveFolderPicker(context);
-    if (result != null) {
-      await StorageConfigService.instance.setFolderConfig(
-        folderId: result.folderId,
-        folderName: result.folderName,
-      );
-      if (mounted) {
-        setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('התיקייה שונתה ל: ${result.folderName} ✓'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
     }
   }
 
@@ -473,14 +452,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                         return Column(
                           children: [
-                            // Drive folder
-                            _buildStorageRow(
+                            // Drive folder (read-only — user can move it freely in Drive)
+                            _buildStorageInfoRow(
                               theme,
                               icon: Icons.folder,
                               label: 'תיקיית Drive',
                               value: folderName ?? 'לא הוגדרה',
-                              onChangeTap: _changeFolder,
-                              changeLabel: 'שינוי תיקייה',
+                              hint: 'ניתן להזיז את התיקייה בתוך Google Drive',
                             ),
                             const Divider(height: 24),
                             // Spreadsheet
@@ -626,6 +604,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
             textStyle: const TextStyle(fontSize: 13),
           ),
         ),
+      ],
+    );
+  }
+
+  /// Read-only storage info row (no change button) — used for the Drive folder
+  /// which users can move freely inside Google Drive.
+  Widget _buildStorageInfoRow(
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    required String value,
+    String? hint,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            hint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 11,
+            ),
+          ),
+        ],
       ],
     );
   }

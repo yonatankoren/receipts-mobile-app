@@ -103,6 +103,8 @@ class _GoogleConnectScreenState extends State<GoogleConnectScreen> {
 
   /// Search Drive for an existing "הוצאות" folder that contains a
   /// "הוצאות" spreadsheet. If found, save the IDs and return true.
+  /// With drive.file scope, only app-created files are visible — which is
+  /// exactly what we want for reconnection.
   /// Folders are sorted by most recently modified — the freshest wins.
   Future<bool> _searchAndLinkExistingResources() async {
     final client = await AuthService.instance.getAuthenticatedClient();

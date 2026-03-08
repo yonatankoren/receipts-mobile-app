@@ -90,8 +90,10 @@ class AppConstants {
   ];
 
   // --- Google OAuth Scopes ---
+  // drive.file — only accesses files/folders created by this app (recommended scope).
+  // Users can freely move the created folder anywhere in their Drive.
   static const List<String> googleScopes = [
-    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/spreadsheets',
   ];
 
