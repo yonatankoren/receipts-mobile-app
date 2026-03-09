@@ -17,6 +17,7 @@ import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
 import '../services/drive_service.dart';
 import '../services/pdf_import_service.dart';
+import '../services/receipt_import_service.dart';
 import '../services/sync_engine.dart';
 import '../widgets/loading_indicator.dart';
 import 'review_and_fix_screen.dart';
@@ -180,36 +181,30 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   Future<void> _handleCapturedImage(String imagePath) async {
     final appState = context.read<AppState>();
 
-    // Show processing indicator
     _showProcessingOverlay();
 
     try {
-      // Save locally + create receipt
-      final receipt = await appState.captureReceipt(imagePath);
-
-      // Try immediate processing (non-blocking — review screen handles loading)
-      final processed = await appState.processReceiptNow(receipt.id);
+      final result = await ReceiptImportService.instance.importFile(
+        filePath: imagePath,
+        appState: appState,
+      );
 
       if (!mounted) return;
-
-      // Dismiss overlay and navigate to review
-      Navigator.of(context).pop(); // Remove overlay
+      Navigator.of(context).pop();
 
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ReviewAndFixScreen(
-            receiptId: processed?.id ?? receipt.id,
-          ),
+          builder: (_) => ReviewAndFixScreen(receiptId: result.receiptId),
         ),
       );
     } on ReceiptValidationException catch (e) {
       if (mounted) {
-        Navigator.of(context).pop(); // Remove overlay
+        Navigator.of(context).pop();
         _showValidationFailureDialog(e);
       }
     } catch (e) {
       if (mounted) {
-        Navigator.of(context).pop(); // Remove overlay
+        Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('שגיאה: $e')),
         );
@@ -776,34 +771,18 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     _showPdfProcessingOverlay(progressNotifier);
 
     try {
-      final pdfResult = await PdfImportService.instance.processPdf(
+      final result = await ReceiptImportService.instance.importFile(
         filePath: pdfPath,
+        appState: context.read<AppState>(),
         onProgress: (msg) => progressNotifier.value = msg,
       );
 
-      progressNotifier.value = 'שומר ומנתח...';
-
       if (!mounted) return;
-      final appState = context.read<AppState>();
-
-      // Save first page as the receipt image + create receipt record
-      final receipt =
-          await appState.captureReceipt(pdfResult.firstPageImagePath);
-
-      // Send merged OCR text to LLM (skips image processing job)
-      final processed = await appState.processReceiptWithOcrText(
-        receipt.id,
-        pdfResult.mergedOcrText,
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(); // dismiss overlay
+      Navigator.of(context).pop();
 
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ReviewAndFixScreen(
-            receiptId: processed?.id ?? receipt.id,
-          ),
+          builder: (_) => ReviewAndFixScreen(receiptId: result.receiptId),
         ),
       );
     } on ImportException catch (e) {

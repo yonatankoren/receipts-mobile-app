@@ -19,6 +19,7 @@ import '../models/receipt.dart';
 import '../models/sync_job.dart';
 import 'auth_service.dart';
 import 'drive_service.dart';
+import 'image_service.dart';
 import 'sheets_service.dart';
 import 'backend_service.dart';
 
@@ -230,14 +231,22 @@ class SyncEngine extends ChangeNotifier {
       monthFolder: receipt.driveFolderName,
       category: receipt.category ?? 'אחר',
       displayName: displayName,
+      pdfPath: receipt.pdfPath,
     );
 
-    // Update receipt with Drive info
+    // Update receipt with Drive info and clear pdfPath (no longer needed locally)
     final updated = receipt.copyWith(
       driveFileId: result.fileId,
       driveFileLink: result.fileLink,
+      clearPdfPath: true,
     );
     await _db.updateReceipt(updated);
+
+    // Delete the local PDF now that it's safely in Drive
+    if (receipt.pdfPath != null) {
+      await ImageService.instance.deletePdf(receipt.id);
+      debugPrint('SyncEngine: cleaned up local PDF for ${receipt.id}');
+    }
   }
 
   Future<void> _executeProcessReceipt(SyncJob job) async {

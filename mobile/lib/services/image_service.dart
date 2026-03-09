@@ -46,6 +46,38 @@ class ImageService {
     return destPath;
   }
 
+  /// Save a PDF to app storage alongside the receipt image.
+  /// Returns the saved file path.
+  Future<String> savePdf(String sourcePath, String receiptId) async {
+    final dir = await _imageDir;
+    final destPath = p.join(dir.path, '$receiptId.pdf');
+    final destFile = File(destPath);
+
+    if (await destFile.exists()) {
+      debugPrint('PDF already saved: $destPath');
+      return destPath;
+    }
+
+    final sourceFile = File(sourcePath);
+    if (!await sourceFile.exists()) {
+      throw Exception('Source PDF not found: $sourcePath');
+    }
+
+    await sourceFile.copy(destPath);
+    debugPrint('PDF saved: $destPath (${await destFile.length()} bytes)');
+    return destPath;
+  }
+
+  /// Delete a local PDF (after confirmed Drive upload)
+  Future<void> deletePdf(String receiptId) async {
+    final dir = await _imageDir;
+    final file = File(p.join(dir.path, '$receiptId.pdf'));
+    if (await file.exists()) {
+      await file.delete();
+      debugPrint('PDF deleted: ${file.path}');
+    }
+  }
+
   /// Check if a receipt image exists locally
   Future<bool> imageExists(String receiptId) async {
     final dir = await _imageDir;

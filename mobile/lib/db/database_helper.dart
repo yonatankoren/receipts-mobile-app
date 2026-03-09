@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -39,6 +39,7 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         capture_timestamp INTEGER NOT NULL,
         image_path TEXT NOT NULL,
+        pdf_path TEXT,
         merchant_name TEXT,
         receipt_date TEXT,
         total_amount REAL,
@@ -91,6 +92,9 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _createExpensesTable(db);
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE receipts ADD COLUMN pdf_path TEXT');
     }
   }
 

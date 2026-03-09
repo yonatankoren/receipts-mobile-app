@@ -27,6 +27,23 @@ subprojects {
     project.evaluationDependsOn(':app')
 }
 
+// Align Java/Kotlin JVM targets for plugin modules (app is handled in app/build.gradle)
+subprojects { sub ->
+    if (sub.name != 'app') {
+        sub.afterEvaluate {
+            if (sub.plugins.hasPlugin("com.android.library")) {
+                sub.android.compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_21
+                    targetCompatibility = JavaVersion.VERSION_21
+                }
+                sub.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                    kotlinOptions.jvmTarget = '21'
+                }
+            }
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

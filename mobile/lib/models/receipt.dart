@@ -4,7 +4,8 @@
 class Receipt {
   final String id; // UUID, stable across all systems
   final DateTime captureTimestamp;
-  String imagePath; // Local file path
+  String imagePath; // Local file path (JPEG thumbnail for display)
+  String? pdfPath; // Original PDF file path (null for photo receipts)
   String? merchantName;
   String? receiptDate; // ISO date YYYY-MM-DD
   double? totalAmount;
@@ -23,6 +24,7 @@ class Receipt {
     required this.id,
     required this.captureTimestamp,
     required this.imagePath,
+    this.pdfPath,
     this.merchantName,
     this.receiptDate,
     this.totalAmount,
@@ -74,6 +76,7 @@ class Receipt {
       'id': id,
       'capture_timestamp': captureTimestamp.millisecondsSinceEpoch,
       'image_path': imagePath,
+      'pdf_path': pdfPath,
       'merchant_name': merchantName,
       'receipt_date': receiptDate,
       'total_amount': totalAmount,
@@ -98,6 +101,7 @@ class Receipt {
       captureTimestamp:
           DateTime.fromMillisecondsSinceEpoch(map['capture_timestamp'] as int),
       imagePath: map['image_path'] as String,
+      pdfPath: map['pdf_path'] as String?,
       merchantName: map['merchant_name'] as String?,
       receiptDate: map['receipt_date'] as String?,
       totalAmount: map['total_amount'] != null
@@ -138,11 +142,14 @@ class Receipt {
     Map<String, double>? fieldConfidences,
     ReceiptStatus? status,
     String? imagePath,
+    String? pdfPath,
+    bool clearPdfPath = false,
   }) {
     return Receipt(
       id: id,
       captureTimestamp: captureTimestamp,
       imagePath: imagePath ?? this.imagePath,
+      pdfPath: clearPdfPath ? null : (pdfPath ?? this.pdfPath),
       merchantName: merchantName ?? this.merchantName,
       receiptDate: receiptDate ?? this.receiptDate,
       totalAmount: totalAmount ?? this.totalAmount,
@@ -205,7 +212,7 @@ class Receipt {
   List<dynamic> toSheetsRow() {
     // Use HYPERLINK formula so the cell shows short text instead of a raw URL
     final linkCell = (driveFileLink != null && driveFileLink!.isNotEmpty)
-        ? '=HYPERLINK("${driveFileLink!}","צפה בתמונה")'
+        ? '=HYPERLINK("${driveFileLink!}","צפה בקובץ")'
         : '';
 
     return [

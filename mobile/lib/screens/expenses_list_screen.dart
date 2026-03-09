@@ -58,7 +58,7 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'הוסף הוצאה שתשלם ללא קבלה',
+                    'הוסף הוצאה שעוד לא קיבלת בעבורה קבלה',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.grey.shade400,
                     ),

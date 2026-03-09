@@ -18,11 +18,13 @@ import 'backend_service.dart';
 class PdfImportResult {
   final String mergedOcrText;
   final String firstPageImagePath;
+  final String originalPdfPath;
   final int pageCount;
 
   PdfImportResult({
     required this.mergedOcrText,
     required this.firstPageImagePath,
+    required this.originalPdfPath,
     required this.pageCount,
   });
 }
@@ -147,6 +149,7 @@ class PdfImportService {
     return PdfImportResult(
       mergedOcrText: merged,
       firstPageImagePath: firstPagePath!,
+      originalPdfPath: filePath,
       pageCount: pageCount,
     );
   }

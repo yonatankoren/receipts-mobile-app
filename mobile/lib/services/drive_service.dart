@@ -31,6 +31,7 @@ class DriveService {
     required String monthFolder, // "YYYY-MM"
     required String category, // e.g. "מזון", "תחבורה", "אחר"
     required String displayName, // e.g. "רמי לוי 03/2025"
+    String? pdfPath, // if set, upload the PDF instead of the image
   }) async {
     final client = await AuthService.instance.getAuthenticatedClient();
     if (client == null) {
@@ -43,12 +44,15 @@ class DriveService {
       throw Exception('Root folder not configured — complete onboarding first');
     }
 
+    final isPdf = pdfPath != null && File(pdfPath).existsSync();
+    final uploadPath = isPdf ? pdfPath : localPath;
+    final ext = isPdf ? 'pdf' : 'jpg';
+    final mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
+
     try {
       final driveApi = drive.DriveApi(client);
-      // Use the short receipt ID suffix for uniqueness (avoids collisions
-      // when the same merchant appears multiple times in one month).
       final shortId = receiptId.substring(0, 4);
-      final fileName = '$displayName ($shortId).jpg';
+      final fileName = '$displayName ($shortId).$ext';
 
       // 1. Ensure month subfolder exists under the root (created lazily)
       final monthFolderId = await _ensureFolder(
@@ -81,16 +85,16 @@ class DriveService {
       }
 
       // 4. Upload the file into the category subfolder
-      final localFile = File(localPath);
+      final localFile = File(uploadPath);
       if (!await localFile.exists()) {
-        throw Exception('Local image not found: $localPath');
+        throw Exception('Local file not found: $uploadPath');
       }
 
       final media = drive.Media(localFile.openRead(), await localFile.length());
       final driveFile = drive.File()
         ..name = fileName
         ..parents = [categoryFolderId]
-        ..mimeType = 'image/jpeg';
+        ..mimeType = mimeType;
 
       final uploaded = await driveApi.files.create(
         driveFile,
@@ -98,7 +102,7 @@ class DriveService {
         $fields: 'id, webViewLink',
       );
 
-      debugPrint('Drive: uploaded ${uploaded.id} → $monthFolder/$category/');
+      debugPrint('Drive: uploaded ${uploaded.id} ($ext) → $monthFolder/$category/');
       return (
         fileId: uploaded.id!,
         fileLink: uploaded.webViewLink ?? 'https://drive.google.com/file/d/${uploaded.id}/view',

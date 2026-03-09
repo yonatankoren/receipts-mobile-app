@@ -55,6 +55,7 @@ dependencies:
   collection: ^1.19.0
   url_launcher: ^6.3.1
   fl_chart: ^1.1.1
+  receive_sharing_intent: ^1.8.1
 
 dev_dependencies:
   flutter_test:
