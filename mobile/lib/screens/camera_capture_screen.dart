@@ -9,12 +9,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
 import '../services/drive_service.dart';
+import '../services/pdf_import_service.dart';
 import '../services/sync_engine.dart';
 import 'review_and_fix_screen.dart';
 import 'receipts_list_screen.dart';
@@ -40,6 +42,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   FlashMode _flashMode = FlashMode.auto;
   String? _error;
   bool _wasOnline = true;
+  bool _isImportMenuOpen = false;
 
   @override
   void initState() {
@@ -476,7 +479,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
             ),
           ),
 
-          // Bottom bar: gallery + expenses + capture + receipts + drive
+          // Bottom bar: add + expenses + capture + receipts + drive
           Positioned(
             bottom: 0,
             left: 0,
@@ -487,13 +490,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Gallery picker (disabled when offline)
-                    _buildBottomButton(
-                      icon: Icons.photo_library_outlined,
-                      label: 'גלריה',
-                      onTap: isOnline ? _pickFromGallery : null,
-                      disabled: !isOnline,
-                    ),
+                    // Import menu trigger (replaces Gallery)
+                    _buildAddButton(isOnline),
 
                     // Pending expenses (with badge)
                     _buildBottomButton(
@@ -507,7 +505,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                             builder: (_) => const ExpensesListScreen(),
                           ),
                         );
-                        // Reload expenses when returning so badge updates
                         if (mounted) {
                           context.read<AppState>().loadExpenses();
                         }
@@ -577,6 +574,70 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               ),
             ),
           ),
+
+          // Import menu overlay (backdrop + floating options)
+          if (_isImportMenuOpen) ...[
+            // Dim backdrop — closes menu on tap
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => setState(() => _isImportMenuOpen = false),
+                child: Container(color: Colors.black54),
+              ),
+            ),
+            // Menu items directly above the "+" button (RTL: first Row item is on the RIGHT)
+            Builder(builder: (context) {
+              final screenWidth = MediaQuery.of(context).size.width;
+              final safeBottom = MediaQuery.of(context).viewPadding.bottom;
+              final availableWidth = screenWidth - 24; // 12px padding each side
+              // 5 items: add(52) + expenses(52) + camera(80) + receipts(52) + drive(52) = 288
+              final gap = (availableWidth - 288) / 6;
+              // In RTL, first item is rightmost. Icon right edge distance from screen right:
+              final menuRight = 12.0 + gap;
+              final baseBottom = safeBottom + 24 + 5 + 18 + 52 + 8;
+
+              return Positioned(
+                bottom: baseBottom,
+                right: menuRight,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, child) => Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, 16 * (1 - value)),
+                      child: child,
+                    ),
+                  ),
+                  // Force LTR so icon is on the RIGHT, text on the LEFT —
+                  // matching the "+" button position on the right side.
+                  child: Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildImportMenuItem(
+                        icon: Icons.description_outlined,
+                        label: 'מסמך',
+                        onTap: _pickDocument,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildImportMenuItem(
+                        icon: Icons.photo_library_outlined,
+                        label: 'תמונה',
+                        onTap: () {
+                          setState(() => _isImportMenuOpen = false);
+                          _pickFromGallery();
+                        },
+                      ),
+                    ],
+                  ),
+                  ),
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );
@@ -611,6 +672,270 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       ),
     );
   }
+
+  // ─── Import menu ──────────────────────────────────────────────
+
+  Widget _buildAddButton(bool isOnline) {
+    return GestureDetector(
+      onTap: isOnline
+          ? () => setState(() => _isImportMenuOpen = !_isImportMenuOpen)
+          : null,
+      child: Opacity(
+        opacity: isOnline ? 1.0 : 0.4,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: _isImportMenuOpen ? Colors.white24 : Colors.black38,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: AnimatedRotation(
+                turns: _isImportMenuOpen ? 0.125 : 0.0, // 45° → ×
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'הוספה',
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImportMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        textDirection: TextDirection.ltr,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.black38,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Document import ─────────────────────────────────────────
+
+  Future<void> _pickDocument() async {
+    setState(() => _isImportMenuOpen = false);
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (result == null || result.files.isEmpty || !mounted) return;
+
+    final file = result.files.first;
+    final path = file.path;
+    if (path == null) return;
+
+    final ext = file.extension?.toLowerCase() ?? '';
+
+    if (ext == 'pdf') {
+      await _handlePdfImport(path);
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('סוג קובץ לא נתמך — ניתן להעלות תמונות או PDF'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handlePdfImport(String pdfPath) async {
+    final progressNotifier = ValueNotifier<String>('טוען מסמך...');
+    _showPdfProcessingOverlay(progressNotifier);
+
+    try {
+      final pdfResult = await PdfImportService.instance.processPdf(
+        filePath: pdfPath,
+        onProgress: (msg) => progressNotifier.value = msg,
+      );
+
+      progressNotifier.value = 'שומר ומנתח...';
+
+      if (!mounted) return;
+      final appState = context.read<AppState>();
+
+      // Save first page as the receipt image + create receipt record
+      final receipt =
+          await appState.captureReceipt(pdfResult.firstPageImagePath);
+
+      // Send merged OCR text to LLM (skips image processing job)
+      final processed = await appState.processReceiptWithOcrText(
+        receipt.id,
+        pdfResult.mergedOcrText,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // dismiss overlay
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ReviewAndFixScreen(
+            receiptId: processed?.id ?? receipt.id,
+          ),
+        ),
+      );
+    } on ImportException catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showImportErrorDialog(e.messageHe);
+      }
+    } on ReceiptValidationException catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showValidationFailureDialog(e);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('שגיאה בעיבוד המסמך: $e')),
+        );
+      }
+    } finally {
+      progressNotifier.dispose();
+    }
+  }
+
+  void _showPdfProcessingOverlay(ValueNotifier<String> progressNotifier) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            margin: const EdgeInsets.all(32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 24),
+                  Text(
+                    'מעבד מסמך...',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  ValueListenableBuilder<String>(
+                    valueListenable: progressNotifier,
+                    builder: (_, msg, __) => Text(
+                      msg,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showImportErrorDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey.shade700,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('הבנתי'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Bottom bar buttons ──────────────────────────────────────
 
   Widget _buildBottomButton({
     required IconData icon,

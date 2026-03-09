@@ -151,6 +151,41 @@ async def process_receipt(
     )
 
 
+@app.post("/ocrOnly")
+async def ocr_only(
+    image: UploadFile = File(...),
+    locale_hint: str = Form(default="he-IL"),
+    user_email: str = Depends(require_auth),
+):
+    """
+    OCR-only endpoint: Image → Cloud Vision OCR → raw text.
+    Used for PDF page-by-page processing where OCR and LLM are separate steps.
+    """
+    image_bytes = await image.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty image file")
+
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
+
+    language_hints = []
+    if locale_hint.startswith("he"):
+        language_hints = ["he", "en"]
+    elif locale_hint.startswith("en"):
+        language_hints = ["en"]
+    else:
+        language_hints = [locale_hint[:2], "en"]
+
+    try:
+        ocr_text = extract_text_from_image(image_bytes, language_hints)
+        logger.info(f"OCR-only: {len(ocr_text)} chars extracted (user: {user_email})")
+    except Exception as e:
+        logger.error(f"OCR-only failed: {e}")
+        raise HTTPException(status_code=502, detail=f"OCR failed: {e}")
+
+    return {"ocr_text": ocr_text}
+
+
 @app.post("/parseReceipt", response_model=ProcessReceiptResponse)
 async def parse_receipt_endpoint(
     receipt_id: str = Form(...),

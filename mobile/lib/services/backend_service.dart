@@ -87,6 +87,98 @@ class BackendService {
     return data;
   }
 
+  /// OCR-only: send an image and get back raw OCR text (no LLM).
+  /// Used for PDF page-by-page OCR where text is merged before LLM.
+  ///
+  /// Tries the dedicated /ocrOnly endpoint first. If it isn't deployed yet
+  /// (404/405), falls back to /processReceipt and extracts raw_ocr_text.
+  Future<String> ocrOnly({
+    required String imagePath,
+    String locale = 'he-IL',
+  }) async {
+    final backendUrl = await getBackendUrl();
+    final accessToken = await AuthService.instance.getAccessToken();
+    if (accessToken == null) {
+      throw Exception('Not authenticated — please sign in first');
+    }
+
+    // Try dedicated /ocrOnly endpoint
+    try {
+      final uri = Uri.parse('$backendUrl/ocrOnly');
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $accessToken'
+        ..fields['locale_hint'] = locale
+        ..files.add(await http.MultipartFile.fromPath('image', imagePath));
+
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw Exception('OCR request timed out'),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return (data['ocr_text'] as String?) ?? '';
+      }
+
+      debugPrint(
+        'ocrOnly: endpoint returned ${response.statusCode}, using fallback',
+      );
+    } catch (e) {
+      debugPrint('ocrOnly: endpoint unavailable ($e), using fallback');
+    }
+
+    // Fallback: use /processReceipt and extract raw_ocr_text
+    final result = await processReceipt(
+      imagePath: imagePath,
+      receiptId: 'ocr_${DateTime.now().millisecondsSinceEpoch}',
+      locale: locale,
+    );
+    return (result['raw_ocr_text'] as String?) ?? '';
+  }
+
+  /// LLM-only: send raw OCR text and get back structured receipt JSON.
+  /// Used after merging OCR text from multiple PDF pages.
+  Future<Map<String, dynamic>> parseReceiptText({
+    required String ocrText,
+    required String receiptId,
+    String locale = 'he-IL',
+    String currencyDefault = 'ILS',
+  }) async {
+    final backendUrl = await getBackendUrl();
+    final uri = Uri.parse('$backendUrl/parseReceipt');
+
+    final accessToken = await AuthService.instance.getAccessToken();
+    if (accessToken == null) {
+      throw Exception('Not authenticated — please sign in first');
+    }
+
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $accessToken'
+      ..fields['receipt_id'] = receiptId
+      ..fields['ocr_text'] = ocrText
+      ..fields['locale_hint'] = locale
+      ..fields['currency_default'] = currencyDefault
+      ..fields['timezone'] = AppConstants.defaultTimezone;
+
+    debugPrint('Backend: sending merged OCR text for $receiptId to $uri');
+
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => throw Exception('Parse request timed out'),
+    );
+
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode != 200) {
+      throw Exception('Parse failed: ${response.statusCode}: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    debugPrint('Backend: got parse response for $receiptId');
+    return data;
+  }
+
   /// Health check
   Future<bool> isHealthy() async {
     try {

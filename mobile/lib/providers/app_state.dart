@@ -204,6 +204,81 @@ class AppState extends ChangeNotifier {
     debugPrint('AppState: cleaned up failed-validation receipt $receiptId');
   }
 
+  /// Process a receipt using pre-extracted OCR text (e.g. from PDF pages).
+  /// Sends text to /parseReceipt for LLM extraction and updates the receipt.
+  Future<Receipt?> processReceiptWithOcrText(
+    String receiptId,
+    String ocrText,
+  ) async {
+    try {
+      final receipt = await _db.getReceipt(receiptId);
+      if (receipt == null) return null;
+
+      final result = await BackendService.instance.parseReceiptText(
+        ocrText: ocrText,
+        receiptId: receiptId,
+      );
+
+      final status = result['status'] as String? ?? 'ok';
+      if (status != 'ok') {
+        final reason = result['reason'] as String? ?? 'unknown';
+        final messageHe =
+            result['message_he'] as String? ?? 'שגיאה בעיבוד המסמך.';
+        await _cleanupFailedReceipt(receiptId);
+        throw ReceiptValidationException(
+          status: status,
+          reason: reason,
+          messageHe: messageHe,
+          receiptId: receiptId,
+        );
+      }
+
+      final confMap = <String, double>{};
+      if (result['confidence'] is Map) {
+        final conf = result['confidence'] as Map<String, dynamic>;
+        conf.forEach((key, value) {
+          if (value is num) confMap[key] = value.toDouble();
+        });
+      }
+
+      final updated = receipt.copyWith(
+        merchantName: result['merchant_name'] as String?,
+        receiptDate: result['receipt_date'] as String?,
+        totalAmount: result['total_amount'] != null
+            ? (result['total_amount'] as num).toDouble()
+            : null,
+        currency: (result['currency'] as String?) ?? receipt.currency,
+        category: result['category'] as String?,
+        rawOcrText: ocrText,
+        overallConfidence: confMap['overall'],
+        fieldConfidences: confMap,
+        status: ReceiptStatus.processing,
+      );
+
+      await _db.updateReceipt(updated);
+
+      // Mark the processReceipt job as completed (OCR was done externally)
+      final jobs = await _db.getJobsForReceipt(receiptId);
+      for (final job in jobs) {
+        if (job.jobType == JobType.processReceipt) {
+          job.status = JobStatus.completed;
+          await _db.updateJob(job);
+        }
+      }
+
+      final idx = _receipts.indexWhere((r) => r.id == receiptId);
+      if (idx >= 0) _receipts[idx] = updated;
+      notifyListeners();
+
+      return updated;
+    } on ReceiptValidationException {
+      rethrow;
+    } catch (e) {
+      debugPrint('AppState: OCR text processing failed: $e');
+      return await _db.getReceipt(receiptId);
+    }
+  }
+
   /// Save user edits from the review screen.
   /// Merges user-editable fields onto the latest DB state so that
   /// system-managed fields (driveFileId, driveFileLink, rawOcrText, etc.)
