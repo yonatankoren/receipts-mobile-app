@@ -1,6 +1,8 @@
 # Secrets
 .env
 *.json
+mobile/android/key.properties
+mobile/android/app/release-keystore.jks
 
 # Python
 __pycache__/

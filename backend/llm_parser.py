@@ -2,8 +2,13 @@
 LLM-based receipt parser.
 Takes raw OCR text and returns structured JSON fields.
 
-The LLM is responsible for understanding varied receipt layouts,
-Hebrew text, and extracting structured data. OCR just provides raw text.
+Two-tier model strategy to minimise cost:
+  1. Primary model (gpt-4.1-nano) — fast and cheap, handles ~80%+ of receipts.
+  2. Escalation model (gpt-4.1-mini) — used only when the primary model
+     reports low confidence, ensuring quality without overspending.
+
+No internal retries — transient failures are retried by the sync engine
+with exponential backoff.
 """
 
 import json
@@ -16,16 +21,27 @@ from schemas import FieldConfidences
 
 logger = logging.getLogger(__name__)
 
+# ── Model configuration ──────────────────────────────────────────────────────
+PRIMARY_MODEL = os.environ.get("LLM_MODEL_PRIMARY", "gpt-4.1-nano")
+ESCALATION_MODEL = os.environ.get("LLM_MODEL_ESCALATION", "gpt-4.1-mini")
+
+# If the primary model's overall confidence is below this, re-run with
+# the escalation model.  Tuned so ≥80% of standard receipts (clear text,
+# common merchants) stay on the primary model — they typically score 0.7–0.95.
+ESCALATION_THRESHOLD = float(os.environ.get("ESCALATION_THRESHOLD", "0.6"))
+
 SYSTEM_PROMPT = """אתה מערכת לחילוץ נתונים מקבלות. אתה מקבל טקסט גולמי מ-OCR של קבלה ומחזיר JSON מובנה.
 
 כללים:
 1. החזר את כל הערכים בעברית כאשר רלוונטי (שם עסק, קטגוריה).
 2. תאריך הקבלה בפורמט ISO: YYYY-MM-DD
-3. הסכום הכולל הוא הסכום הסופי לתשלום (כולל מע"מ).
-4. מטבע ברירת מחדל: ILS (אלא אם מופיע מטבע אחר בקבלה).
-5. דרג את הביטחון שלך בכל שדה מ-0.0 עד 1.0.
-6. אם שדה לא ניתן לחילוץ, החזר null עם ביטחון 0.0.
-7. קטגוריה: נסה לזהות (מזון, תחבורה, קניות, מסעדות, דלק, בריאות, אחר). אם לא בטוח, החזר null.
+3. פורמט תאריך ישראלי: dd/mm/yyyy (יום לפני חודש). כלומר 05/03/2025 = 5 במרץ 2025.
+4. הסכום הכולל הוא הסכום הסופי לתשלום (כולל מע"מ).
+5. מטבע ברירת מחדל: ILS (אלא אם מופיע מטבע אחר בקבלה).
+6. דרג את הביטחון שלך בכל שדה מ-0.0 עד 1.0.
+7. אם שדה לא ניתן לחילוץ, החזר null עם ביטחון 0.0.
+8. קטגוריה — בחר מתוך הרשימה הבאה בלבד:
+   שכירות, חשבונות, תקשורת, תחזוקה, בית, הוצאות משרדיות, ביטוחים, הדרכה והתפתחות, פרסום, טכנולוגיה, רכב ודלק, קניות, מזון, ביגוד, פנאי, בילויים, בריאות, תחבורה ציבורית, טיולים, טיפוח, אחר.
 
 החזר אך ורק JSON תקין בפורמט הבא, ללא טקסט נוסף:
 {
@@ -49,18 +65,51 @@ def parse_receipt_text(
     receipt_id: str,
     locale_hint: str = "he-IL",
     currency_default: str = "ILS",
-    retry_count: int = 0,
 ) -> dict:
     """
     Send OCR text to LLM, get structured receipt data back.
-    
-    Implements validation + retry:
-    - First attempt: standard prompt
-    - If JSON invalid, retry once with stricter instructions
-    - If still invalid, return best-effort with low confidence + error message
+
+    Two-tier strategy:
+      1. Call PRIMARY_MODEL (cheap).
+      2. If overall confidence < ESCALATION_THRESHOLD, call ESCALATION_MODEL.
     """
+    result = _call_llm(
+        ocr_text=ocr_text,
+        receipt_id=receipt_id,
+        model=PRIMARY_MODEL,
+        locale_hint=locale_hint,
+        currency_default=currency_default,
+    )
+
+    if result.get("error"):
+        return result
+
+    overall = result.get("confidence", {}).get("overall", 0.0)
+    if overall < ESCALATION_THRESHOLD:
+        logger.info(
+            f"Escalating {receipt_id}: {PRIMARY_MODEL} confidence {overall:.2f} "
+            f"< {ESCALATION_THRESHOLD} — retrying with {ESCALATION_MODEL}"
+        )
+        result = _call_llm(
+            ocr_text=ocr_text,
+            receipt_id=receipt_id,
+            model=ESCALATION_MODEL,
+            locale_hint=locale_hint,
+            currency_default=currency_default,
+        )
+
+    return result
+
+
+def _call_llm(
+    ocr_text: str,
+    receipt_id: str,
+    model: str,
+    locale_hint: str = "he-IL",
+    currency_default: str = "ILS",
+) -> dict:
+    """Single LLM call.  Returns normalised result or error dict."""
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    model = os.environ.get("LLM_MODEL", "gpt-4o")
 
     user_message = f"""טקסט OCR מקבלה (מזהה: {receipt_id}):
 ---
@@ -72,9 +121,6 @@ def parse_receipt_text(
 
 חלץ את הנתונים והחזר JSON בלבד."""
 
-    if retry_count > 0:
-        user_message += "\n\nחשוב מאוד: החזר אך ורק JSON תקין. ללא הסברים, ללא markdown, רק JSON."
-
     try:
         response = client.chat.completions.create(
             model=model,
@@ -82,7 +128,7 @@ def parse_receipt_text(
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},
             ],
-            temperature=0.1,  # Low temperature for deterministic extraction
+            temperature=0.1,
             max_tokens=1000,
             response_format={"type": "json_object"},
         )
@@ -90,34 +136,22 @@ def parse_receipt_text(
         raw_response = response.choices[0].message.content.strip()
         parsed = json.loads(raw_response)
 
-        # Validate and normalize the response
-        return _normalize_parsed(parsed, receipt_id, currency_default)
-
-    except json.JSONDecodeError as e:
-        if retry_count < 1:
-            logger.warning(f"JSON parse failed for {receipt_id}, retrying: {e}")
-            return parse_receipt_text(
-                ocr_text, receipt_id, locale_hint, currency_default,
-                retry_count=retry_count + 1,
-            )
-        logger.error(f"JSON parse failed after retry for {receipt_id}: {e}")
-        return _error_response(receipt_id, f"JSON parsing failed: {e}")
+        result = _normalize_parsed(parsed, receipt_id, currency_default)
+        logger.info(
+            f"LLM ({model}) for {receipt_id}: "
+            f"overall_confidence={result['confidence']['overall']:.2f}"
+        )
+        return result
 
     except Exception as e:
-        if retry_count < 1:
-            logger.warning(f"LLM call failed for {receipt_id}, retrying: {e}")
-            return parse_receipt_text(
-                ocr_text, receipt_id, locale_hint, currency_default,
-                retry_count=retry_count + 1,
-            )
-        logger.error(f"LLM call failed after retry for {receipt_id}: {e}")
-        return _error_response(receipt_id, f"LLM error: {e}")
+        logger.error(f"LLM call failed ({model}) for {receipt_id}: {e}")
+        return _error_response(receipt_id, f"LLM error ({model}): {e}")
 
 
 def _normalize_parsed(parsed: dict, receipt_id: str, currency_default: str) -> dict:
     """Validate and normalize the LLM output to match our schema."""
     confidence = parsed.get("confidence", {})
-    
+
     return {
         "receipt_id": receipt_id,
         "merchant_name": parsed.get("merchant_name"),
@@ -170,4 +204,3 @@ def _clamp(val, lo=0.0, hi=1.0) -> float:
         return max(lo, min(hi, float(val)))
     except (ValueError, TypeError):
         return 0.0
-

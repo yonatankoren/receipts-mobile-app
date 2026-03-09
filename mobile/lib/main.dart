@@ -18,6 +18,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/cleanup_service.dart';
+import 'services/custom_category_service.dart';
 import 'services/storage_config_service.dart';
 import 'services/sync_engine.dart';
 import 'app.dart';
@@ -43,6 +44,7 @@ void main() async {
     // Initialize services (non-blocking)
     await AuthService.instance.init();
     await StorageConfigService.instance.init();
+    await CustomCategoryService.instance.init();
     SyncEngine.instance.init();
 
     // Run periodic cleanup (silent, non-blocking)

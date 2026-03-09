@@ -14,12 +14,16 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import Depends, FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from schemas import ProcessReceiptRequest, ProcessReceiptResponse, FieldConfidences
 from ocr_service import extract_text_from_image
 from llm_parser import parse_receipt_text
+from image_quality import check_image_quality
+from receipt_validator import validate_ocr_text
+from validation_responses import build_validation_failure
+from auth import require_auth
 
 load_dotenv()
 
@@ -48,12 +52,15 @@ async def process_receipt(
     locale_hint: str = Form(default="he-IL"),
     currency_default: str = Form(default="ILS"),
     timezone: str = Form(default="Asia/Jerusalem"),
+    user_email: str = Depends(require_auth),
 ):
     """
-    Full pipeline: Image → OCR → LLM parse → structured JSON.
+    Full pipeline: Image → quality checks → OCR → receipt validation → LLM parse → structured JSON.
     
     The app sends the receipt image + metadata.
-    Backend runs Cloud Vision OCR, then LLM extraction, returns fields + confidences.
+    Backend runs image quality checks, Cloud Vision OCR, receipt validation,
+    then LLM extraction, returns fields + confidences.
+    Validation failures return early without calling the LLM.
     """
     # 1. Read image bytes
     image_bytes = await image.read()
@@ -63,9 +70,19 @@ async def process_receipt(
     if len(image_bytes) > 20 * 1024 * 1024:  # 20 MB limit
         raise HTTPException(status_code=400, detail="Image too large (max 20 MB)")
 
-    logger.info(f"Processing receipt {receipt_id}: {len(image_bytes)} bytes")
+    logger.info(f"Processing receipt {receipt_id}: {len(image_bytes)} bytes (user: {user_email})")
 
-    # 2. OCR
+    # 2. Image quality checks (BEFORE OCR to save API calls)
+    quality_result = check_image_quality(image_bytes)
+    if not quality_result["passed"]:
+        reason = quality_result["reason"]
+        logger.warning(
+            f"Image quality failed for {receipt_id}: {reason} "
+            f"(details: {quality_result['details']})"
+        )
+        return build_validation_failure(receipt_id, reason)
+
+    # 3. OCR
     try:
         language_hints = []
         if locale_hint.startswith("he"):
@@ -83,14 +100,19 @@ async def process_receipt(
 
     if not ocr_text.strip():
         logger.warning(f"No text extracted for {receipt_id}")
-        return ProcessReceiptResponse(
-            receipt_id=receipt_id,
-            raw_ocr_text="",
-            confidence=FieldConfidences(overall=0.0),
-            error="No text could be extracted from the image",
-        )
+        return build_validation_failure(receipt_id, "unreadable_receipt")
 
-    # 3. LLM Parse
+    # 4. OCR quality + receipt-likeliness validation (BEFORE LLM)
+    validation_result = validate_ocr_text(ocr_text)
+    if not validation_result["passed"]:
+        reason = validation_result["reason"] or "unreadable_receipt"
+        logger.warning(
+            f"Receipt validation failed for {receipt_id}: {reason} "
+            f"(score: {validation_result['score']}, signals: {validation_result['signals']})"
+        )
+        return build_validation_failure(receipt_id, reason)
+
+    # 5. LLM Parse (only reached if all validation passed)
     try:
         parsed = parse_receipt_text(
             ocr_text=ocr_text,
@@ -107,10 +129,11 @@ async def process_receipt(
             error=f"LLM parsing failed: {e}",
         )
 
-    # 4. Build response
+    # 6. Build success response
     conf = parsed.get("confidence", {})
     return ProcessReceiptResponse(
         receipt_id=parsed.get("receipt_id", receipt_id),
+        status="ok",
         merchant_name=parsed.get("merchant_name"),
         receipt_date=parsed.get("receipt_date"),
         total_amount=parsed.get("total_amount"),
@@ -135,6 +158,7 @@ async def parse_receipt_endpoint(
     locale_hint: str = Form(default="he-IL"),
     currency_default: str = Form(default="ILS"),
     timezone: str = Form(default="Asia/Jerusalem"),
+    user_email: str = Depends(require_auth),
 ):
     """
     LLM-only pipeline: takes raw OCR text, returns structured JSON.
@@ -167,6 +191,7 @@ async def parse_receipt_endpoint(
     conf = parsed.get("confidence", {})
     return ProcessReceiptResponse(
         receipt_id=parsed.get("receipt_id", receipt_id),
+        status="ok",
         merchant_name=parsed.get("merchant_name"),
         receipt_date=parsed.get("receipt_date"),
         total_amount=parsed.get("total_amount"),
@@ -189,4 +214,3 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host=host, port=port)
-

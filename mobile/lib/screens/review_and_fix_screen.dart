@@ -21,6 +21,7 @@ import 'package:provider/provider.dart';
 import '../db/database_helper.dart';
 import '../models/receipt.dart';
 import '../providers/app_state.dart';
+import '../services/custom_category_service.dart';
 import '../utils/constants.dart';
 
 class ReviewAndFixScreen extends StatefulWidget {
@@ -780,19 +781,20 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
   }
 
   /// Show a bottom-sheet category picker.
-  /// Layout: ללא → top 3 (★) → divider → all categories alphabetically
-  /// (including the top 3 in their normal alphabetical position).
+  /// Layout: ללא → top 3 (★) → divider → all categories → divider → הוסף קטגוריה.
+  /// Custom categories show a small edit icon for renaming.
   void _showCategoryPicker() {
+    final svc = CustomCategoryService.instance;
+    final all = svc.allCategories;
+
     final topCats = _topCategories
-        .where((c) => AppConstants.categories.contains(c))
+        .where((c) => all.contains(c))
         .take(3)
         .toList();
 
-    // Handle orphan category from old data
-    final hasOrphan = _selectedCategory != null &&
-        !AppConstants.categories.contains(_selectedCategory);
+    final hasOrphan = _selectedCategory != null && !all.contains(_selectedCategory);
 
-    showModalBottomSheet<String?>(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -807,7 +809,6 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           builder: (_, scrollController) {
             return Column(
               children: [
-                // Handle bar
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Container(
@@ -820,22 +821,19 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
                   ),
                 ),
                 const Text('בחר קטגוריה',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Expanded(
                   child: ListView(
                     controller: scrollController,
                     children: [
-                      // "ללא" option
-                      _categoryTile(null, 'ללא', isSelected: _selectedCategory == null),
+                      _categoryTile(null, 'ללא',
+                          isSelected: _selectedCategory == null),
 
-                      // Orphan category (from old data)
                       if (hasOrphan)
                         _categoryTile(_selectedCategory, _selectedCategory!,
                             isSelected: true, italic: true),
 
-                      // Top 3 most-used with star
                       if (topCats.isNotEmpty) ...[
                         const Padding(
                           padding: EdgeInsets.only(right: 16, top: 8, bottom: 4),
@@ -850,7 +848,6 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
                         const Divider(height: 16),
                       ],
 
-                      // All categories alphabetically (including top 3)
                       const Padding(
                         padding: EdgeInsets.only(right: 16, top: 4, bottom: 4),
                         child: Text('כל הקטגוריות',
@@ -859,9 +856,36 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
                                 color: Colors.grey,
                                 fontWeight: FontWeight.w500)),
                       ),
-                      ...AppConstants.categories.map((cat) => _categoryTile(
-                          cat, cat,
-                          isSelected: _selectedCategory == cat)),
+                      ...all.map((cat) {
+                        final isCustom = svc.customCategories.contains(cat);
+                        return _categoryTile(
+                          cat,
+                          cat,
+                          isSelected: _selectedCategory == cat,
+                          onEdit: isCustom
+                              ? () {
+                                  Navigator.pop(ctx);
+                                  _showRenameCategoryDialog(cat);
+                                }
+                              : null,
+                        );
+                      }),
+
+                      const Divider(height: 16),
+                      ListTile(
+                        dense: true,
+                        leading: Icon(Icons.add_rounded,
+                            color: Colors.blue.shade700, size: 22),
+                        title: Text('הוסף קטגוריה',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w600)),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _showAddCategoryDialog();
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -870,14 +894,14 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           },
         );
       },
-    ).then((value) {
-      // value is non-null only when explicitly popped with a value
-      // (including the special '__null__' sentinel for "ללא")
-    });
+    );
   }
 
   Widget _categoryTile(String? value, String label,
-      {bool isSelected = false, bool star = false, bool italic = false}) {
+      {bool isSelected = false,
+      bool star = false,
+      bool italic = false,
+      VoidCallback? onEdit}) {
     return ListTile(
       dense: true,
       selected: isSelected,
@@ -893,12 +917,174 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
         ),
       ),
-      trailing: isSelected
-          ? Icon(Icons.check_rounded, color: Colors.blue.shade700, size: 20)
+      trailing: (onEdit != null || isSelected)
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onEdit != null)
+                  GestureDetector(
+                    onTap: onEdit,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.edit_outlined,
+                          size: 18, color: Colors.grey.shade500),
+                    ),
+                  ),
+                if (isSelected)
+                  Icon(Icons.check_rounded,
+                      color: Colors.blue.shade700, size: 20),
+              ],
+            )
           : null,
       onTap: () {
         setState(() => _selectedCategory = value);
         Navigator.pop(context);
+      },
+    );
+  }
+
+  // ──────────────── Add / Rename category dialogs ────────────────
+
+  void _showAddCategoryDialog() {
+    final controller = TextEditingController();
+    String? errorText;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('הוסף קטגוריה', textAlign: TextAlign.center),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                textDirection: TextDirection.rtl,
+                maxLength: CustomCategoryService.maxNameLength,
+                decoration: InputDecoration(
+                  hintText: 'שם הקטגוריה',
+                  errorText: errorText,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      await CustomCategoryService.instance
+                          .addCategory(controller.text);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      setState(() {
+                        _selectedCategory = controller.text.trim();
+                      });
+                    } on ArgumentError catch (e) {
+                      setDialogState(
+                          () => errorText = e.message as String?);
+                    }
+                  },
+                  child: const Text('הוסף'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showRenameCategoryDialog(String oldName) {
+    final controller = TextEditingController(text: oldName);
+    String? errorText;
+    bool isRenaming = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('שנה שם קטגוריה', textAlign: TextAlign.center),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    textDirection: TextDirection.rtl,
+                    maxLength: CustomCategoryService.maxNameLength,
+                    enabled: !isRenaming,
+                    decoration: InputDecoration(
+                      hintText: 'שם חדש',
+                      errorText: errorText,
+                    ),
+                  ),
+                  if (isRenaming) ...[
+                    const SizedBox(height: 12),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2)),
+                        SizedBox(width: 10),
+                        Text('מעדכן...', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isRenaming ? null : () => Navigator.pop(ctx),
+                  child: const Text('ביטול'),
+                ),
+                ElevatedButton(
+                  onPressed: isRenaming
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            errorText = null;
+                            isRenaming = true;
+                          });
+                          try {
+                            await CustomCategoryService.instance
+                                .renameCategory(oldName, controller.text);
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            // Refresh the in-memory receipts
+                            if (mounted) {
+                              final appState = context.read<AppState>();
+                              await appState.loadReceipts();
+                              setState(() {
+                                if (_selectedCategory == oldName) {
+                                  _selectedCategory = controller.text.trim();
+                                }
+                              });
+                            }
+                          } on ArgumentError catch (e) {
+                            setDialogState(() {
+                              errorText = e.message as String?;
+                              isRenaming = false;
+                            });
+                          } catch (e) {
+                            setDialogState(() {
+                              errorText = 'שגיאה: $e';
+                              isRenaming = false;
+                            });
+                          }
+                        },
+                  child: const Text('שמור'),
+                ),
+              ],
+            );
+          },
+        );
       },
     );
   }

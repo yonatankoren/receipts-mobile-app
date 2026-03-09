@@ -11,34 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/receipt.dart';
 import '../providers/app_state.dart';
+import '../services/custom_category_service.dart';
 import '../utils/constants.dart';
-
-/// Hand-picked pastel palette — visually distinct and easy on the eyes.
-const Map<String, Color> _categoryColors = {
-  'אחר': Color(0xFFB0BEC5),
-  'ביגוד': Color(0xFFF48FB1),
-  'ביטוחים': Color(0xFF80CBC4),
-  'בילויים': Color(0xFFFFAB91),
-  'בית': Color(0xFFE6EE9C),
-  'בריאות': Color(0xFFEF9A9A),
-  'הדרכה והתפתחות': Color(0xFFB39DDB),
-  'הוצאות משרדיות': Color(0xFF90CAF9),
-  'חשבונות': Color(0xFFA5D6A7),
-  'טיולים': Color(0xFF80DEEA),
-  'טיפוח': Color(0xFFF8BBD0),
-  'טכנולוגיה': Color(0xFF9FA8DA),
-  'מזון': Color(0xFFFFCC80),
-  'פנאי': Color(0xFFCE93D8),
-  'פרסום': Color(0xFFFFE082),
-  'קניות': Color(0xFF81D4FA),
-  'רכב ודלק': Color(0xFFC5E1A5),
-  'שכירות': Color(0xFFBCAAA4),
-  'תחבורה ציבורית': Color(0xFFB2EBF2),
-  'תחזוקה': Color(0xFFD7CCC8),
-  'תקשורת': Color(0xFFDCE775),
-};
-
-const Color _fallbackColor = Color(0xFFE0E0E0);
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -218,7 +192,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
                   return PieChartSectionData(
                     value: e.value,
                     title: pct >= 5 ? '${pct.toStringAsFixed(0)}%' : '',
-                    color: _categoryColors[e.key] ?? _fallbackColor,
+                    color: CustomCategoryService.instance.colorFor(e.key),
                     radius: 80,
                     titleStyle: const TextStyle(
                       fontSize: 13,
@@ -255,7 +229,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
             width: 14,
             height: 14,
             decoration: BoxDecoration(
-              color: _categoryColors[entry.key] ?? _fallbackColor,
+              color: CustomCategoryService.instance.colorFor(entry.key),
               borderRadius: BorderRadius.circular(4),
             ),
           ),

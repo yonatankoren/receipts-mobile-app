@@ -25,8 +25,11 @@ class FieldConfidences(BaseModel):
 
 class ProcessReceiptResponse(BaseModel):
     receipt_id: str
+    status: str = "ok"                          # "ok" | "needs_retry" | "not_receipt"
+    reason: Optional[str] = None                # machine-readable failure reason
+    message_he: Optional[str] = None            # Hebrew user-facing message on failure
     merchant_name: Optional[str] = None
-    receipt_date: Optional[str] = None  # ISO date string YYYY-MM-DD
+    receipt_date: Optional[str] = None          # ISO date string YYYY-MM-DD
     total_amount: Optional[float] = None
     currency: str = "ILS"
     category: Optional[str] = None

@@ -59,6 +59,14 @@ class Receipt {
       status == ReceiptStatus.synced ||
       rawOcrText != null;
 
+  /// Parse a DB timestamp that may be int (epoch ms) or ISO-8601 string.
+  static DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
+  }
+
   // --- Serialization ---
 
   Map<String, dynamic> toMap() {
@@ -113,9 +121,7 @@ class Receipt {
       createdAt: map['created_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int)
           : DateTime.now(),
-      updatedAt: map['updated_at'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int)
-          : DateTime.now(),
+      updatedAt: _parseDateTime(map['updated_at']),
     );
   }
 

@@ -178,6 +178,15 @@ class DatabaseHelper {
     return counts;
   }
 
+  /// Rename a category across all receipts. Returns updated row count.
+  Future<int> renameCategory(String oldName, String newName) async {
+    final db = await database;
+    return await db.rawUpdate(
+      'UPDATE receipts SET category = ?, updated_at = ? WHERE category = ?',
+      [newName, DateTime.now().millisecondsSinceEpoch, oldName],
+    );
+  }
+
   // ===== SYNC JOB OPERATIONS =====
 
   Future<void> insertJob(SyncJob job) async {
