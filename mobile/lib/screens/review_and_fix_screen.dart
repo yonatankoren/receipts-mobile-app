@@ -23,6 +23,7 @@ import '../models/receipt.dart';
 import '../providers/app_state.dart';
 import '../services/custom_category_service.dart';
 import '../utils/constants.dart';
+import '../widgets/loading_indicator.dart';
 
 class ReviewAndFixScreen extends StatefulWidget {
   final String receiptId;
@@ -565,7 +566,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
           ],
         ),
         body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: LoadingIndicator(message: 'הקבלה נטענת'))
             : _receipt == null
                 ? const Center(child: Text('הקבלה לא נמצאה'))
                 : _buildForm(theme),
@@ -622,11 +623,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
               ),
               child: Row(
                 children: [
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                  const LoadingIndicator(compact: true, size: 16),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -1028,10 +1025,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
                     const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
+                        LoadingIndicator(compact: true, size: 16),
                         SizedBox(width: 10),
                         Text('מעדכן...', style: TextStyle(fontSize: 13)),
                       ],
@@ -1197,13 +1191,10 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
       child: ElevatedButton.icon(
         onPressed: _isSaving ? null : _save,
         icon: _isSaving
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
+            ? const LoadingIndicator(
+                compact: true,
+                size: 20,
+                color: Colors.white,
               )
             : const Icon(Icons.check, size: 24),
         label: Text(
@@ -1236,13 +1227,10 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
                   ? null
                   : _confirmDelete,
               icon: _isDeleting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
+                  ? const LoadingIndicator(
+                      compact: true,
+                      size: 16,
+                      color: Colors.white,
                     )
                   : const Icon(Icons.delete_outline, size: 20),
               label: Text(
@@ -1268,13 +1256,10 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
               child: ElevatedButton.icon(
                 onPressed: _isSaving ? null : _save,
                 icon: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                    ? const LoadingIndicator(
+                        compact: true,
+                        size: 16,
+                        color: Colors.white,
                       )
                     : const Icon(Icons.check, size: 20),
                 label: Text(

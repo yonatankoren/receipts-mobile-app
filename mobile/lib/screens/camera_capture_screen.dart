@@ -18,6 +18,7 @@ import '../providers/app_state.dart';
 import '../services/drive_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/sync_engine.dart';
+import '../widgets/loading_indicator.dart';
 import 'review_and_fix_screen.dart';
 import 'receipts_list_screen.dart';
 import 'expenses_list_screen.dart';
@@ -311,17 +312,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 20),
-                  Text(
-                    'מעבד קבלה...',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'שומר ומנתח את הקבלה',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  const LoadingIndicator(message: 'שומר ומנתח את הקבלה'),
                 ],
               ),
             ),
@@ -445,7 +436,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               ),
             )
           else
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
+            const Center(child: LoadingIndicator(color: Colors.white)),
 
           // Top bar: flash + sync indicator + navigation
           Positioned(
@@ -535,8 +526,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                               child: _isCapturing
                                   ? const Padding(
                                       padding: EdgeInsets.all(16),
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 3,
+                                      child: LoadingIndicator(
+                                        compact: true,
+                                        size: 20,
                                       ),
                                     )
                                   : const Icon(
@@ -853,13 +845,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 24),
-                  Text(
-                    'מעבד מסמך...',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
+                  const LoadingIndicator(),
+                  const SizedBox(height: 16),
                   ValueListenableBuilder<String>(
                     valueListenable: progressNotifier,
                     builder: (_, msg, __) => Text(

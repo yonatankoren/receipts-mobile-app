@@ -15,6 +15,7 @@ import '../../services/storage_config_service.dart';
 import '../../utils/constants.dart';
 import '../camera_capture_screen.dart';
 import 'storage_setup_screen.dart';
+import '../../widgets/loading_indicator.dart';
 
 class GoogleConnectScreen extends StatefulWidget {
   const GoogleConnectScreen({super.key});
@@ -253,12 +254,9 @@ class _GoogleConnectScreenState extends State<GoogleConnectScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (!_statusMessage!.startsWith('✓'))
-                              const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
+                              const LoadingIndicator(
+                                compact: true,
+                                size: 16,
                               )
                             else
                               Icon(
@@ -293,10 +291,10 @@ class _GoogleConnectScreenState extends State<GoogleConnectScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isBusy ? null : _signIn,
                   icon: _isBusy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                      ? const LoadingIndicator(
+                          compact: true,
+                          size: 20,
+                          color: Colors.white,
                         )
                       : const Icon(Icons.login, size: 22),
                   label: Text(

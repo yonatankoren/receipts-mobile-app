@@ -16,6 +16,7 @@ import '../services/sync_engine.dart';
 import '../services/image_service.dart';
 import '../db/database_helper.dart';
 import '../utils/constants.dart';
+import '../widgets/loading_indicator.dart';
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -149,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         barrierDismissible: false,
         builder: (_) => const PopScope(
           canPop: false,
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: LoadingIndicator()),
         ),
       );
 
@@ -328,7 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('הגדרות'),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: LoadingIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [

@@ -12,6 +12,7 @@ import '../../services/auth_service.dart';
 import '../../services/storage_config_service.dart';
 import '../../utils/constants.dart';
 import '../camera_capture_screen.dart';
+import '../../widgets/loading_indicator.dart';
 
 class StorageSetupScreen extends StatefulWidget {
   /// If true, shows a "storage inaccessible" message instead of the welcome text.
@@ -159,11 +160,7 @@ class _StorageSetupScreenState extends State<StorageSetupScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(
-              width: 56,
-              height: 56,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
+            const LoadingIndicator(size: 56),
             const SizedBox(height: 28),
             Text(
               'מכינים הכל בשבילכם...',

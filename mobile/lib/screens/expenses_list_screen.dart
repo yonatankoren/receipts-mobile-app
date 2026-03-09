@@ -15,6 +15,7 @@ import '../models/expense.dart';
 import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
 import 'review_and_fix_screen.dart';
+import '../widgets/loading_indicator.dart';
 
 class ExpensesListScreen extends StatefulWidget {
   const ExpensesListScreen({super.key});
@@ -557,17 +558,7 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 20),
-                  Text(
-                    'מעבד קבלה...',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'שומר ומנתח את הקבלה',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  const LoadingIndicator(message: 'שומר ומנתח את הקבלה'),
                 ],
               ),
             ),

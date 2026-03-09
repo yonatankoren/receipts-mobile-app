@@ -12,6 +12,7 @@ import 'screens/camera_capture_screen.dart';
 import 'screens/main_pager_screen.dart';
 import 'screens/onboarding/google_connect_screen.dart';
 import 'screens/onboarding/storage_setup_screen.dart';
+import 'widgets/loading_indicator.dart';
 
 class ReceiptsApp extends StatelessWidget {
   const ReceiptsApp({super.key});
@@ -149,7 +150,7 @@ class _HomeRouterState extends State<HomeRouter> {
   Widget build(BuildContext context) {
     if (_isChecking) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(child: LoadingIndicator()),
       );
     }
 

@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/sync_engine.dart';
+import 'loading_indicator.dart';
 
 class SyncStatusIndicator extends StatelessWidget {
   const SyncStatusIndicator({super.key});
@@ -50,13 +51,10 @@ class SyncStatusIndicator extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isActive)
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: color,
-                  ),
+                LoadingIndicator(
+                  compact: true,
+                  size: 14,
+                  color: color,
                 )
               else
                 Icon(Icons.cloud_upload, color: color, size: 16),

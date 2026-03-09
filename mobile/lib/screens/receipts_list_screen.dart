@@ -16,6 +16,7 @@ import '../providers/app_state.dart';
 import '../services/drive_service.dart';
 import 'review_and_fix_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../widgets/loading_indicator.dart';
 
 class ReceiptsListScreen extends StatefulWidget {
   const ReceiptsListScreen({super.key});
@@ -96,7 +97,7 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
         body: Consumer<AppState>(
           builder: (context, appState, _) {
             if (appState.isLoading && appState.receipts.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: LoadingIndicator());
             }
 
             final cutoff = DateTime.now().subtract(const Duration(days: 90));
