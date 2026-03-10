@@ -538,59 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextField(
-                          controller: _accountantEmailController,
-                          decoration: InputDecoration(
-                            labelText: 'מייל רואה חשבון',
-                            hintText: 'accountant@example.com',
-                            prefixIcon: const Icon(Icons.email_outlined),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          textDirection: TextDirection.ltr,
-                          onChanged: (value) {
-                            AccountantConfigService.instance
-                                .setAccountantEmail(value);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _ccEmailsController,
-                          decoration: InputDecoration(
-                            labelText: 'העתק (CC)',
-                            hintText: 'כתובות נוספות, מופרדות בפסיק',
-                            prefixIcon: const Icon(Icons.people_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          textDirection: TextDirection.ltr,
-                          onChanged: (value) {
-                            final emails = value
-                                .split(',')
-                                .map((e) => e.trim())
-                                .where((e) => e.isNotEmpty)
-                                .toList();
-                            AccountantConfigService.instance
-                                .setCcEmails(emails);
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'הגדר מייל של רואה החשבון כדי לשלוח קבלות בקלות דרך Gmail.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          textDirection: TextDirection.rtl,
-                        ),
-                      ],
-                    ),
+                    child: _buildAccountantContent(theme),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -732,6 +680,223 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ],
     );
+  }
+
+  // ─── Accountant section ───────────────────────────────────────
+
+  Widget _buildAccountantContent(ThemeData theme) {
+    final config = AccountantConfigService.instance;
+    final hasEmail = config.hasAccountantEmail;
+
+    if (!hasEmail) {
+      // No accountant configured — show description + "הוסף" button
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'הגדר מייל של רואה החשבון כדי לשלוח קבלות בקלות דרך Gmail.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textDirection: TextDirection.rtl,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _showAccountantDialog(context),
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text('הוסף'),
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Accountant configured — show current values + "ערוך" button
+    final ccText =
+        config.ccEmails.isNotEmpty ? config.ccEmails.join(', ') : '—';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildAccountantInfoRow(
+          theme,
+          Icons.email_outlined,
+          'מייל',
+          config.accountantEmail!,
+        ),
+        const SizedBox(height: 10),
+        _buildAccountantInfoRow(
+          theme,
+          Icons.people_outline,
+          'העתק (CC)',
+          ccText,
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showAccountantDialog(context),
+            icon: const Icon(Icons.edit, size: 18),
+            label: const Text('ערוך'),
+            style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountantInfoRow(
+    ThemeData theme,
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium,
+                textDirection: TextDirection.ltr,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showAccountantDialog(BuildContext ctx) async {
+    final config = AccountantConfigService.instance;
+    final emailCtrl = TextEditingController(
+      text: config.accountantEmail ?? '',
+    );
+    final ccCtrl = TextEditingController(
+      text: config.ccEmails.join(', '),
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) {
+        final theme = Theme.of(dialogCtx);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.mail_outline, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              const Text('פרטי רואה חשבון'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: emailCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'מייל רואה חשבון',
+                    hintText: 'accountant@example.com',
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  textDirection: TextDirection.ltr,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ccCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'העתק (CC)',
+                    hintText: 'כתובות נוספות, מופרדות בפסיק',
+                    prefixIcon: const Icon(Icons.people_outline),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  textDirection: TextDirection.ltr,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('ביטול'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: const Text('אישור'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      final email = emailCtrl.text.trim();
+      final ccList = ccCtrl.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      await config.setAccountantEmail(email.isEmpty ? null : email);
+      await config.setCcEmails(ccList);
+
+      // Update the old controllers too (kept for compatibility)
+      _accountantEmailController.text = email;
+      _ccEmailsController.text = ccList.join(', ');
+
+      setState(() {});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('פרטי רואה חשבון הוגדרו בהצלחה'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+
+    emailCtrl.dispose();
+    ccCtrl.dispose();
   }
 
   Widget _buildSectionHeader(ThemeData theme, String title, IconData icon) {

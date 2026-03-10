@@ -17,6 +17,10 @@ import '../db/database_helper.dart';
 import '../models/receipt.dart';
 import 'auth_service.dart';
 
+/// Whether a receipt has been fully synced to Drive.
+bool _isSyncedToDrive(Receipt r) =>
+    r.driveFileId != null && r.driveFileId!.isNotEmpty;
+
 class ExportService {
   static final ExportService instance = ExportService._();
   ExportService._();
@@ -36,14 +40,42 @@ class ExportService {
     final db = DatabaseHelper.instance;
     final archive = Archive();
 
-    // ── 1. Gather receipts for selected months ──
+    // ── 1. Gather receipts for selected months (synced to Drive only) ──
     onProgress?.call('אוסף את הקבלות…');
     final allReceipts = <String, List<Receipt>>{};
+    int skippedUnsynced = 0;
+    int skippedDuplicates = 0;
+    final seenDriveIds = <String>{}; // deduplicate across months
     for (final mk in monthKeys) {
       final receipts = await db.getReceiptsByMonth(mk);
-      if (receipts.isNotEmpty) {
-        allReceipts[mk] = receipts;
+      final synced = receipts.where(_isSyncedToDrive).toList();
+      skippedUnsynced += receipts.length - synced.length;
+
+      // Deduplicate by driveFileId — two DB rows can point to the same
+      // Drive file when a receipt was imported/processed more than once.
+      final unique = <Receipt>[];
+      for (final r in synced) {
+        if (seenDriveIds.add(r.driveFileId!)) {
+          unique.add(r);
+        } else {
+          skippedDuplicates++;
+        }
       }
+
+      if (unique.isNotEmpty) {
+        allReceipts[mk] = unique;
+      }
+    }
+    if (skippedUnsynced > 0) {
+      debugPrint(
+        'ExportService: skipped $skippedUnsynced receipts not yet synced to Drive',
+      );
+    }
+    if (skippedDuplicates > 0) {
+      debugPrint(
+        'ExportService: deduplicated $skippedDuplicates receipts '
+        'sharing the same Drive file',
+      );
     }
 
     // ── 2. Download files and add to archive ──
@@ -56,6 +88,11 @@ class ExportService {
       driveApi = drive.DriveApi(client);
     }
 
+    if (driveApi == null) {
+      client?.close();
+      throw Exception('Cannot authenticate with Google Drive');
+    }
+
     try {
       for (final entry in allReceipts.entries) {
         final monthKey = entry.key;
@@ -63,39 +100,36 @@ class ExportService {
 
         for (final receipt in receipts) {
           final category = receipt.category ?? 'אחר';
-          final fileName = _buildFileName(receipt);
-          final archivePath = '$monthKey/$category/$fileName';
 
           try {
-            Uint8List? fileBytes;
+            // Download from Drive — the single source of truth.
+            final result = await _downloadDriveFile(
+              driveApi,
+              receipt.driveFileId!,
+            );
 
-            // Try downloading from Drive first (original quality)
-            if (driveApi != null &&
-                receipt.driveFileId != null &&
-                receipt.driveFileId!.isNotEmpty) {
-              fileBytes =
-                  await _downloadDriveFile(driveApi, receipt.driveFileId!);
-            }
-
-            // Fall back to local file
-            if (fileBytes == null) {
-              final localPath =
-                  (receipt.pdfPath != null && receipt.pdfPath!.isNotEmpty)
-                      ? receipt.pdfPath!
-                      : receipt.imagePath;
-              final localFile = File(localPath);
-              if (await localFile.exists()) {
-                fileBytes = await localFile.readAsBytes();
-              }
-            }
-
-            if (fileBytes != null) {
-              archive.addFile(
-                ArchiveFile(archivePath, fileBytes.length, fileBytes),
+            if (result == null) {
+              debugPrint(
+                'ExportService: Drive download failed for receipt '
+                '${receipt.id} — skipping',
               );
+              continue;
             }
+
+            // Sanitize the Drive filename — it may contain '/' (e.g.
+            // "רמי לוי 03/2025 (abcd).pdf") which the archive would
+            // interpret as a directory separator.
+            final safeFileName = result.fileName
+                .replaceAll('/', '-')
+                .replaceAll(r'\', '-');
+            final archivePath = '$monthKey/$category/$safeFileName';
+            archive.addFile(
+              ArchiveFile(archivePath, result.bytes.length, result.bytes),
+            );
           } catch (e) {
-            debugPrint('ExportService: failed to add $archivePath: $e');
+            debugPrint(
+              'ExportService: failed to add receipt ${receipt.id}: $e',
+            );
             // Continue with other receipts — don't let one failure break export
           }
         }
@@ -139,11 +173,18 @@ class ExportService {
   // ─── Helpers ──────────────────────────────────────────────────
 
   /// Download a file from Google Drive by its file ID.
-  Future<Uint8List?> _downloadDriveFile(
+  /// Returns both the file bytes and the actual filename from Drive.
+  Future<({Uint8List bytes, String fileName})?> _downloadDriveFile(
     drive.DriveApi api,
     String fileId,
   ) async {
     try {
+      // Get file metadata to preserve the original filename/extension
+      final fileMeta = await api.files.get(
+        fileId,
+        $fields: 'name',
+      ) as drive.File;
+
       final media = await api.files.get(
         fileId,
         downloadOptions: drive.DownloadOptions.fullMedia,
@@ -153,23 +194,13 @@ class ExportService {
       await for (final chunk in media.stream) {
         chunks.addAll(chunk);
       }
-      return Uint8List.fromList(chunks);
+
+      final driveName = fileMeta.name ?? 'receipt.jpg';
+      return (bytes: Uint8List.fromList(chunks), fileName: driveName);
     } catch (e) {
       debugPrint('ExportService: Drive download failed for $fileId: $e');
       return null;
     }
-  }
-
-  /// Build a filename for a receipt in the ZIP.
-  /// Matches the naming format used in Google Drive.
-  String _buildFileName(Receipt receipt) {
-    final merchant = receipt.merchantName ?? 'קבלה';
-    final shortId = receipt.id.substring(0, 4);
-    final isPdf = receipt.pdfPath != null && receipt.pdfPath!.isNotEmpty;
-    final ext = isPdf ? 'pdf' : 'jpg';
-    // Sanitize merchant name for filesystem safety
-    final safeMerchant = merchant.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
-    return '$safeMerchant ($shortId).$ext';
   }
 
   /// Build the ZIP filename.

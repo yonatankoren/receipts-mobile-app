@@ -42,7 +42,8 @@ class _ExportMonthsScreenState extends State<ExportMonthsScreen> {
   }
 
   Future<void> _loadData() async {
-    final counts = await DatabaseHelper.instance.getMonthCounts();
+    // Only count receipts synced to Drive — those are the ones we can export.
+    final counts = await DatabaseHelper.instance.getMonthCountsSynced();
     final years = <int>{};
     for (final key in counts.keys) {
       final parts = key.split('-');

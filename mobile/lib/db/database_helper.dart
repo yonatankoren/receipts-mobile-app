@@ -182,6 +182,24 @@ class DatabaseHelper {
     return counts;
   }
 
+  /// Like [getMonthCounts] but only counts receipts that have been
+  /// fully synced to Google Drive (i.e. have a non-null driveFileId).
+  /// Also deduplicates by driveFileId — two DB rows pointing to the
+  /// same Drive file are counted once.
+  Future<Map<String, int>> getMonthCountsSynced() async {
+    final receipts = await getAllReceipts();
+    final counts = <String, int>{};
+    final seenDriveIds = <String>{};
+    for (final r in receipts) {
+      if (r.driveFileId != null &&
+          r.driveFileId!.isNotEmpty &&
+          seenDriveIds.add(r.driveFileId!)) {
+        counts[r.monthKey] = (counts[r.monthKey] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
   /// Rename a category across all receipts. Returns updated row count.
   Future<int> renameCategory(String oldName, String newName) async {
     final db = await database;
