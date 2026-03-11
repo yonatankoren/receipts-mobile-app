@@ -109,14 +109,31 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
             final validIds = recentReceipts.map((r) => r.id).toSet();
             _selectedIds.removeWhere((id) => !validIds.contains(id));
 
+            // Split receipts into special top-blocks and normal month-grouped
+            final errorReceipts = recentReceipts
+                .where((r) => r.status == ReceiptStatus.error)
+                .toList();
+            final reviewReceipts = recentReceipts
+                .where((r) =>
+                    r.status == ReceiptStatus.processing &&
+                    r.rawOcrText != null)
+                .toList();
+            final normalReceipts = recentReceipts
+                .where((r) =>
+                    !errorReceipts.contains(r) &&
+                    !reviewReceipts.contains(r))
+                .toList();
+
             final byMonth = <String, List<Receipt>>{};
-            for (final r in recentReceipts) {
+            for (final r in normalReceipts) {
               byMonth.putIfAbsent(r.monthKey, () => []).add(r);
             }
             final sortedMonths = byMonth.keys.toList()
               ..sort((a, b) => b.compareTo(a));
 
-            if (sortedMonths.isEmpty) {
+            if (sortedMonths.isEmpty &&
+                errorReceipts.isEmpty &&
+                reviewReceipts.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -147,17 +164,38 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: () => appState.loadReceipts(),
-                    child: ListView.builder(
+                    child: ListView(
                       padding: EdgeInsets.only(
                         bottom: _isSelecting ? 80 : 16,
                       ),
-                      itemCount: sortedMonths.length,
-                      itemBuilder: (context, index) {
-                        final month = sortedMonths[index];
-                        final receipts = byMonth[month]!;
-                        return _buildMonthSection(
-                            context, month, receipts, theme);
-                      },
+                      children: [
+                        // ── Error receipts block ──
+                        if (errorReceipts.isNotEmpty)
+                          _buildSpecialSection(
+                            context: context,
+                            theme: theme,
+                            icon: Icons.info_outline,
+                            label: 'דורשות טיפול',
+                            color: Colors.orange,
+                            receipts: errorReceipts,
+                          ),
+                        // ── Review-pending receipts block ──
+                        if (reviewReceipts.isNotEmpty)
+                          _buildSpecialSection(
+                            context: context,
+                            theme: theme,
+                            icon: Icons.rate_review_outlined,
+                            label: 'ממתינות לבדיקה',
+                            color: Colors.blue,
+                            receipts: reviewReceipts,
+                          ),
+                        // ── Normal month sections ──
+                        ...sortedMonths.map((month) {
+                          final receipts = byMonth[month]!;
+                          return _buildMonthSection(
+                              context, month, receipts, theme);
+                        }),
+                      ],
                     ),
                   ),
                 ),
@@ -498,6 +536,66 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // ──────────────── Special top-block section ────────────────
+
+  Widget _buildSpecialSection({
+    required BuildContext context,
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    required Color color,
+    required List<Receipt> receipts,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          margin: const EdgeInsets.only(top: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            border: Border(
+              bottom: BorderSide(color: color.withValues(alpha: 0.2)),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${receipts.length}',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...receipts.map(
+          (r) => _buildReceiptCard(context, r, theme),
+        ),
+      ],
     );
   }
 

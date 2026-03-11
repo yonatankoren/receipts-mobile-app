@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/receipt_validation_exception.dart';
+import '../models/receipt.dart';
 import '../providers/app_state.dart';
 import '../services/drive_service.dart';
 import '../services/pdf_import_service.dart';
@@ -55,9 +56,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     _wasOnline = SyncEngine.instance.isOnline;
     SyncEngine.instance.addListener(_onConnectivityChanged);
     _initCamera();
-    // Load expenses so the badge count is available
+    // Load expenses + receipts so badge & banner counts are available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppState>().loadExpenses();
+      context.read<AppState>().loadReceipts();
     });
   }
 
@@ -446,6 +448,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
           else
             const Center(child: LoadingIndicator(color: Colors.white)),
 
+          // Status banners (non-tappable)
+          ..._buildStatusBanners(appState),
+
           // Top bar: flash + sync indicator + navigation
           Positioned(
             top: 0,
@@ -554,12 +559,17 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                     _buildBottomButton(
                       icon: Icons.receipt_long,
                       label: 'קבלות',
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ReceiptsListScreen(),
-                        ),
-                      ),
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ReceiptsListScreen(),
+                          ),
+                        );
+                        if (mounted) {
+                          context.read<AppState>().loadReceipts();
+                        }
+                      },
                     ),
 
                     // Drive folder with expansion menu
@@ -692,6 +702,126 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
             }),
           ],
         ],
+      ),
+    );
+  }
+
+  // ─── Status banners (non-tappable) ────────────────────────────
+
+  List<Widget> _buildStatusBanners(AppState appState) {
+    final receipts = appState.receipts;
+
+    // Compute counts
+    final errorCount = receipts.where((r) => r.status == ReceiptStatus.error).length;
+    final reviewCount = receipts.where(
+      (r) => r.status == ReceiptStatus.processing && r.rawOcrText != null,
+    ).length;
+    final syncingCount = receipts.where((r) => r.status == ReceiptStatus.reviewed).length;
+
+    if (errorCount == 0 && reviewCount == 0 && syncingCount == 0) return [];
+
+    return [
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 48, left: 10, right: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (errorCount > 0)
+                  _buildBanner(
+                    icon: Icons.info_outline,
+                    color: Colors.orange,
+                    text: errorCount == 1
+                        ? 'קבלה אחת לא הושלמה'
+                        : '$errorCount קבלות לא הושלמו',
+                    subtext: 'היכנסו ל׳קבלות׳ לפרטים',
+                  ),
+                if (reviewCount > 0) ...[
+                  if (errorCount > 0) const SizedBox(height: 6),
+                  _buildBanner(
+                    icon: Icons.rate_review_outlined,
+                    color: Colors.blue,
+                    text: reviewCount == 1
+                        ? 'קבלה אחת ממתינה לבדיקה'
+                        : '$reviewCount קבלות ממתינות לבדיקה',
+                    subtext: 'היכנסו ל׳קבלות׳ כדי להשלים',
+                  ),
+                ],
+                if (syncingCount > 0) ...[
+                  if (errorCount > 0 || reviewCount > 0) const SizedBox(height: 6),
+                  _buildBanner(
+                    icon: Icons.sync,
+                    color: Colors.blue,
+                    text: syncingCount == 1
+                        ? 'מסנכרן קבלה אחת…'
+                        : 'מסנכרן $syncingCount קבלות…',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildBanner({
+    required IconData icon,
+    required Color color,
+    required String text,
+    String? subtext,
+  }) {
+    return IgnorePointer(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+        ),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    text,
+                    textDirection: TextDirection.rtl,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  if (subtext != null) ...[                  
+                    const SizedBox(height: 2),
+                    Text(
+                      subtext,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 11,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
