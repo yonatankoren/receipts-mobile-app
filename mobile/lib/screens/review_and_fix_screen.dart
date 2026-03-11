@@ -22,7 +22,7 @@ import '../db/database_helper.dart';
 import '../models/receipt.dart';
 import '../providers/app_state.dart';
 import '../services/custom_category_service.dart';
-import '../utils/constants.dart';
+import '../services/sync_engine.dart';
 import '../widgets/loading_indicator.dart';
 
 class ReviewAndFixScreen extends StatefulWidget {
@@ -238,7 +238,20 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
         await appState.saveReview(updated);
       }
 
-      if (mounted) {
+      if (!mounted) return;
+
+      // Show loading overlay while remote sync runs
+      _showSyncOverlay();
+
+      final syncSuccess = await SyncEngine.instance.awaitReceiptSync(
+        widget.receiptId,
+        timeout: const Duration(seconds: 60),
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // dismiss sync overlay
+
+      if (syncSuccess) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isExpenseMode
@@ -248,10 +261,24 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        // Pop back — in expense mode, go back to the expenses list
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('הקבלה נשמרה במכשיר, הסנכרון יושלם בהמשך'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Pop back — in expense mode, go back to the expenses list
+      if (mounted) Navigator.of(context).pop();
+
+    } catch (e) {
+      // Dismiss sync overlay if showing
+      if (_isSaving && mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('שגיאה בשמירה: $e')),
@@ -260,6 +287,41 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// Show a loading overlay while waiting for remote sync to complete
+  void _showSyncOverlay() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Card(
+            margin: const EdgeInsets.all(32),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LoadingIndicator(message: 'שומר ומסנכרן את הקבלה…'),
+                  const SizedBox(height: 12),
+                  Text(
+                    'נא לא לצאת מהאפליקציה',
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Show a duplicate receipt warning dialog.

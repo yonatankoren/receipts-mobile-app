@@ -45,6 +45,13 @@ class SyncEngine extends ChangeNotifier {
 
   /// Initialize the sync engine — call once on app start
   void init() {
+    // Reset any jobs orphaned by a previous crash
+    _db.resetStaleJobs().then((count) {
+      if (count > 0) {
+        debugPrint('SyncEngine: reset $count stale inProgress jobs to pending');
+      }
+    });
+
     // Monitor connectivity
     _connectivitySub = _connectivity.onConnectivityChanged.listen(
       (results) {
@@ -343,5 +350,31 @@ class SyncEngine extends ChangeNotifier {
         return 'שומר בגיליון...';
     }
   }
-}
 
+  /// Wait for all sync jobs of a receipt to complete (or timeout).
+  /// Returns true if all jobs completed successfully, false otherwise.
+  /// Used by the review screen to await remote sync before showing success.
+  Future<bool> awaitReceiptSync(String receiptId, {Duration timeout = const Duration(seconds: 60)}) async {
+    final deadline = DateTime.now().add(timeout);
+
+    // Ensure sync is running
+    if (_isOnline && !_isRunning) {
+      runPendingJobs();
+    }
+
+    while (DateTime.now().isBefore(deadline)) {
+      final jobs = await _db.getJobsForReceipt(receiptId);
+      if (jobs.isEmpty) return false;
+
+      final allDone = jobs.every((j) => j.status == JobStatus.completed);
+      if (allDone) return true;
+
+      final anyPermanentlyFailed = jobs.any((j) => j.isPermanentlyFailed);
+      if (anyPermanentlyFailed) return false;
+
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    return false; // Timed out
+  }
+}

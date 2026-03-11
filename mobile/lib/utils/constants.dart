@@ -20,10 +20,11 @@ class AppConstants {
     'מטבע',
     'קטגוריה',
     'קישור לתמונה',
+    'מזהה',
   ];
 
   /// Number of data columns in the main sheet
-  static const int sheetsColumnCount = 6; // A–F
+  static const int sheetsColumnCount = 7; // A–G
 
   /// Default tab name for the main receipts sheet (no longer used as fixed name;
   /// tabs are now year-based: "הוצאות YYYY").

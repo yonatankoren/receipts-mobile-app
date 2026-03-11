@@ -172,7 +172,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     );
 
     if (picked != null && mounted) {
-      _handleCapturedImage(picked.path);
+      _handleCapturedImage(picked.path, sourceType: 'gallery');
     }
   }
 
@@ -180,7 +180,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   /// 1. Save locally & create receipt
   /// 2. Try immediate processing
   /// 3. Navigate to review screen (or show validation failure)
-  Future<void> _handleCapturedImage(String imagePath) async {
+  Future<void> _handleCapturedImage(String imagePath, {String sourceType = 'camera'}) async {
     final appState = context.read<AppState>();
 
     _showProcessingOverlay();
@@ -189,6 +189,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       final result = await ReceiptImportService.instance.importFile(
         filePath: imagePath,
         appState: appState,
+        sourceType: sourceType,
       );
 
       if (!mounted) return;
@@ -310,6 +311,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const LoadingIndicator(message: 'שומר ומנתח את הקבלה'),
+                  const SizedBox(height: 12),
+                  Text(
+                    'נא לא לצאת מהאפליקציה',
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -905,6 +916,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       final result = await ReceiptImportService.instance.importFile(
         filePath: pdfPath,
         appState: context.read<AppState>(),
+        sourceType: 'pdf',
         onProgress: (msg) => progressNotifier.value = msg,
       );
 
@@ -966,6 +978,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                           ),
                       textAlign: TextAlign.center,
                       textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'נא לא לצאת מהאפליקציה',
+                    textAlign: TextAlign.center,
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade500,
                     ),
                   ),
                 ],

@@ -33,7 +33,6 @@ class SheetsService {
     if (spreadsheetId == null || spreadsheetId.isEmpty) return;
 
     final driveLink = receipt.driveFileLink;
-    if (driveLink == null || driveLink.isEmpty) return;
 
     final client = await AuthService.instance.getAuthenticatedClient();
     if (client == null) {
@@ -45,22 +44,39 @@ class SheetsService {
       final year = receipt.receiptYear;
       final tabName = _expensesTabName(year);
 
-      // 1. Read column F (formulas) to find the matching row
-      final resp = await api.spreadsheets.values.get(
+      // 1. Try to find the row by receipt_id in column G first
+      int? targetRow;
+      final gResp = await api.spreadsheets.values.get(
         spreadsheetId,
-        '$tabName!F:F',
-        valueRenderOption: 'FORMULA',
+        '$tabName!G:G',
       );
-      if (resp.values == null) return;
-
-      int? targetRow; // 0-indexed row number
-      for (int i = 0; i < resp.values!.length; i++) {
-        final row = resp.values![i];
-        if (row.isNotEmpty) {
-          final cell = row[0].toString();
-          if (cell == driveLink || cell.contains(driveLink)) {
+      if (gResp.values != null) {
+        for (int i = 0; i < gResp.values!.length; i++) {
+          final row = gResp.values![i];
+          if (row.isNotEmpty && row[0].toString() == receipt.id) {
             targetRow = i;
             break;
+          }
+        }
+      }
+
+      // Fallback: search by drive link in column F (for older rows)
+      if (targetRow == null && driveLink != null && driveLink.isNotEmpty) {
+        final fResp = await api.spreadsheets.values.get(
+          spreadsheetId,
+          '$tabName!F:F',
+          valueRenderOption: 'FORMULA',
+        );
+        if (fResp.values != null) {
+          for (int i = 0; i < fResp.values!.length; i++) {
+            final row = fResp.values![i];
+            if (row.isNotEmpty) {
+              final cell = row[0].toString();
+              if (cell == driveLink || cell.contains(driveLink)) {
+                targetRow = i;
+                break;
+              }
+            }
           }
         }
       }
@@ -164,15 +180,13 @@ class SheetsService {
         );
       }
 
-      // 3. Idempotency: check drive link in column F
-      if (receipt.driveFileLink != null && receipt.driveFileLink!.isNotEmpty) {
-        final dup = await _isDriveLinkInSheet(
-          api, spreadsheetId, expensesTab, receipt.driveFileLink!,
-        );
-        if (dup) {
-          debugPrint('Sheets: drive link already exists in $expensesTab, skipping');
-          return;
-        }
+      // 3. Idempotency: check receipt_id in column G
+      final dup = await _isReceiptIdInSheet(
+        api, spreadsheetId, expensesTab, receipt.id,
+      );
+      if (dup) {
+        debugPrint('Sheets: receipt ${receipt.id} already exists in $expensesTab, skipping');
+        return;
       }
 
       // 4. Read existing month column (A) to find insertion point
@@ -194,7 +208,7 @@ class SheetsService {
       await api.spreadsheets.values.update(
         valueRange,
         spreadsheetId,
-        '$expensesTab!A$insertRow:F$insertRow',
+        '$expensesTab!A$insertRow:G$insertRow',
         valueInputOption: 'USER_ENTERED',
       );
 
@@ -1039,32 +1053,27 @@ class SheetsService {
   /// Check if a drive link already exists in column F (idempotency).
   /// Column F now contains HYPERLINK formulas, so we check if the cell
   /// value (display text) or the raw formula contains the URL.
-  Future<bool> _isDriveLinkInSheet(
+  /// Check if a receipt_id already exists in column G of the sheet.
+  Future<bool> _isReceiptIdInSheet(
     sheets.SheetsApi api,
     String spreadsheetId,
     String tabName,
-    String driveLink,
+    String receiptId,
   ) async {
     try {
-      // Use FORMULA value render option to see the raw HYPERLINK formula
       final resp = await api.spreadsheets.values.get(
         spreadsheetId,
-        '$tabName!F:F',
-        valueRenderOption: 'FORMULA',
+        '$tabName!G:G',
       );
       if (resp.values == null) return false;
       for (final row in resp.values!) {
-        if (row.isNotEmpty) {
-          final cell = row[0].toString();
-          // Match raw URL or URL inside HYPERLINK("url","...")
-          if (cell == driveLink || cell.contains(driveLink)) {
-            return true;
-          }
+        if (row.isNotEmpty && row[0].toString() == receiptId) {
+          return true;
         }
       }
       return false;
     } catch (e) {
-      debugPrint('Sheets: idempotency check error: $e');
+      debugPrint('Sheets: receipt_id idempotency check error: $e');
       return false;
     }
   }
@@ -1105,8 +1114,8 @@ class SheetsService {
   /// Column width requests for the main data sheet.
   List<sheets.Request> _columnWidthRequests(int sheetId) {
     // A: חודש(90), B: שם עסק(200), C: סכום(100), D: מטבע(70),
-    // E: קטגוריה(120), F: קישור(280)
-    const widths = [90, 200, 100, 70, 120, 280];
+    // E: קטגוריה(120), F: קישור(280), G: מזהה(50)
+    const widths = [90, 200, 100, 70, 120, 280, 50];
     return List.generate(widths.length, (i) {
       return sheets.Request(
         updateDimensionProperties: sheets.UpdateDimensionPropertiesRequest(

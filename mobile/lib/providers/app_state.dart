@@ -59,7 +59,7 @@ class AppState extends ChangeNotifier {
 
   /// Core capture flow: save image locally, create receipt, enqueue jobs.
   /// Returns the receipt for immediate navigation to review screen.
-  Future<Receipt> captureReceipt(String imagePath) async {
+  Future<Receipt> captureReceipt(String imagePath, {String? sourceType}) async {
     final receiptId = _uuid.v4();
     final now = DateTime.now();
 
@@ -72,6 +72,7 @@ class AppState extends ChangeNotifier {
       captureTimestamp: now,
       imagePath: savedPath,
       status: ReceiptStatus.captured,
+      sourceType: sourceType,
     );
 
     await _db.insertReceipt(receipt);

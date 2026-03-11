@@ -17,6 +17,7 @@ class Receipt {
   double? overallConfidence;
   Map<String, double>? fieldConfidences; // JSON map
   ReceiptStatus status;
+  String? sourceType; // camera, gallery, pdf, share
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -36,6 +37,7 @@ class Receipt {
     this.overallConfidence,
     this.fieldConfidences,
     this.status = ReceiptStatus.captured,
+    this.sourceType,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -90,6 +92,7 @@ class Receipt {
           ? _encodeConfidences(fieldConfidences!)
           : null,
       'status': status.name,
+      'source_type': sourceType,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
     };
@@ -122,6 +125,7 @@ class Receipt {
         (e) => e.name == (map['status'] as String? ?? 'captured'),
         orElse: () => ReceiptStatus.captured,
       ),
+      sourceType: map['source_type'] as String?,
       createdAt: map['created_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int)
           : DateTime.now(),
@@ -143,6 +147,7 @@ class Receipt {
     ReceiptStatus? status,
     String? imagePath,
     String? pdfPath,
+    String? sourceType,
     bool clearPdfPath = false,
   }) {
     return Receipt(
@@ -161,6 +166,7 @@ class Receipt {
       overallConfidence: overallConfidence ?? this.overallConfidence,
       fieldConfidences: fieldConfidences ?? this.fieldConfidences,
       status: status ?? this.status,
+      sourceType: sourceType ?? this.sourceType,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -207,8 +213,8 @@ class Receipt {
     return date.year * 100 + date.month;
   }
 
-  /// Row values matching the 6-column Sheets layout:
-  /// חודש | שם עסק | סכום | מטבע | קטגוריה | קישור לתמונה
+  /// Row values matching the 7-column Sheets layout:
+  /// חודש | שם עסק | סכום | מטבע | קטגוריה | קישור לתמונה | מזהה
   List<dynamic> toSheetsRow() {
     // Use HYPERLINK formula so the cell shows short text instead of a raw URL
     final linkCell = (driveFileLink != null && driveFileLink!.isNotEmpty)
@@ -222,6 +228,7 @@ class Receipt {
       currency,
       category ?? '',
       linkCell,
+      id,
     ];
   }
 }

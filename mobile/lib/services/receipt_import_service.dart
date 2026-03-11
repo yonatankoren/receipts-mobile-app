@@ -55,13 +55,14 @@ class ReceiptImportService {
   Future<ImportResult> importFile({
     required String filePath,
     required AppState appState,
+    String? sourceType,
     void Function(String message)? onProgress,
   }) async {
     final kind = detectFileKind(filePath);
 
     switch (kind) {
       case FileKind.image:
-        return _importImage(filePath, appState, onProgress);
+        return _importImage(filePath, appState, onProgress, sourceType: sourceType ?? 'gallery');
       case FileKind.pdf:
         return _importPdf(filePath, appState, onProgress);
       case FileKind.unsupported:
@@ -102,9 +103,10 @@ class ReceiptImportService {
     String filePath,
     AppState appState,
     void Function(String)? onProgress,
+    {String sourceType = 'gallery'}
   ) async {
     onProgress?.call('שומר ומנתח את הקבלה');
-    final receipt = await appState.captureReceipt(filePath);
+    final receipt = await appState.captureReceipt(filePath, sourceType: sourceType);
     final processed = await appState.processReceiptNow(receipt.id);
     return ImportResult(processed?.id ?? receipt.id);
   }
@@ -123,7 +125,7 @@ class ReceiptImportService {
 
     onProgress?.call('שומר ומנתח...');
 
-    final receipt = await appState.captureReceipt(pdfResult.firstPageImagePath);
+    final receipt = await appState.captureReceipt(pdfResult.firstPageImagePath, sourceType: 'pdf');
 
     // Save the original PDF for later Drive upload
     final savedPdfPath = await ImageService.instance

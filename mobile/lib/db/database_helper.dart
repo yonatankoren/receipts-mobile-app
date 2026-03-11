@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -51,6 +51,7 @@ class DatabaseHelper {
         overall_confidence REAL,
         field_confidences TEXT,
         status TEXT DEFAULT 'captured',
+        source_type TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -95,6 +96,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE receipts ADD COLUMN pdf_path TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE receipts ADD COLUMN source_type TEXT');
     }
   }
 
@@ -334,6 +338,18 @@ class DatabaseHelper {
       "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status IN ('pending', 'failed') AND retry_count < max_retries",
     );
     return (result.first['cnt'] as int?) ?? 0;
+  }
+
+  /// Reset any jobs stuck in 'inProgress' back to 'pending'.
+  /// Called once on app startup to recover from crashes mid-execution.
+  Future<int> resetStaleJobs() async {
+    final db = await database;
+    final count = await db.rawUpdate(
+      "UPDATE sync_jobs SET status = 'pending', updated_at = ? "
+      "WHERE status = 'inProgress'",
+      [DateTime.now().millisecondsSinceEpoch],
+    );
+    return count;
   }
 
   /// Check if a specific job type is already completed for a receipt (idempotency)

@@ -59,6 +59,7 @@ class _SharedImportScreenState extends State<SharedImportScreen> {
     final result = await ReceiptImportService.instance.importFile(
       filePath: widget.filePaths.first,
       appState: appState,
+      sourceType: 'share',
       onProgress: (msg) {
         if (mounted) setState(() => _statusMessage = msg);
       },
@@ -189,6 +190,16 @@ class _SharedImportScreenState extends State<SharedImportScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 LoadingIndicator(message: _statusMessage),
+                const SizedBox(height: 12),
+                Text(
+                  'נא לא לצאת מהאפליקציה',
+                  textAlign: TextAlign.center,
+                  textDirection: TextDirection.rtl,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
               ],
             ),
           ),
