@@ -35,6 +35,10 @@ class SyncEngine extends ChangeNotifier {
   int _pendingCount = 0;
   String? _currentActivity;
 
+  /// Called whenever a receipt's status changes in the DB (synced, error, etc.)
+  /// so listeners can refresh their in-memory receipt list.
+  VoidCallback? onReceiptsChanged;
+
   bool get isRunning => _isRunning;
   bool get isOnline => _isOnline;
   int get pendingCount => _pendingCount;
@@ -194,6 +198,9 @@ class SyncEngine extends ChangeNotifier {
       // Check if all jobs for this receipt are done → update receipt status
       await _checkReceiptFullySync(job.receiptId);
 
+      // Notify listeners that receipt data may have changed
+      onReceiptsChanged?.call();
+
     } catch (e) {
       debugPrint('SyncEngine: failed ${job.jobType.name} for ${job.receiptId}: $e');
 
@@ -210,6 +217,7 @@ class SyncEngine extends ChangeNotifier {
         if (receipt != null) {
           receipt.status = ReceiptStatus.error;
           await _db.updateReceipt(receipt);
+          onReceiptsChanged?.call();
         }
       }
     }
@@ -284,6 +292,7 @@ class SyncEngine extends ChangeNotifier {
         rawOcrText: 'VALIDATION_FAILED:$reason',
       );
       await _db.updateReceipt(errorUpdated);
+      onReceiptsChanged?.call();
       // Don't retry — this is a permanent failure for this image
       return;
     }

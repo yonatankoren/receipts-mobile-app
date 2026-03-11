@@ -55,6 +55,12 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     WidgetsBinding.instance.addObserver(this);
     _wasOnline = SyncEngine.instance.isOnline;
     SyncEngine.instance.addListener(_onConnectivityChanged);
+    // Refresh in-memory receipts whenever SyncEngine updates a receipt status
+    SyncEngine.instance.onReceiptsChanged = () {
+      if (mounted) {
+        context.read<AppState>().loadReceipts();
+      }
+    };
     _initCamera();
     // Load expenses + receipts so badge & banner counts are available
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,6 +71,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
 
   @override
   void dispose() {
+    SyncEngine.instance.onReceiptsChanged = null;
     SyncEngine.instance.removeListener(_onConnectivityChanged);
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
@@ -781,9 +788,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.18),
+          color: color.withValues(alpha: 0.75),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+          border: Border.all(color: color.withValues(alpha: 0.9), width: 0.5),
         ),
         child: Row(
           textDirection: TextDirection.rtl,
