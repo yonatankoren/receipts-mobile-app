@@ -153,31 +153,40 @@ class StorageConfigService extends ChangeNotifier {
     bool sheetOk = false;
 
     try {
-      // Check Drive folder
-      try {
-        final driveApi = drive.DriveApi(client);
-        final folder = await driveApi.files.get(
-          _folderId!,
-          $fields: 'id,trashed',
-        );
-        if (folder is drive.File && folder.trashed != true) {
-          folderOk = true;
-        }
-      } catch (e) {
-        debugPrint('StorageConfig: folder validation failed: $e');
-      }
+      // Check Drive folder and Spreadsheet in parallel — they are independent
+      final results = await Future.wait([
+        // [0] Drive folder check
+        () async {
+          try {
+            final driveApi = drive.DriveApi(client);
+            final folder = await driveApi.files.get(
+              _folderId!,
+              $fields: 'id,trashed',
+            );
+            return (folder is drive.File && folder.trashed != true);
+          } catch (e) {
+            debugPrint('StorageConfig: folder validation failed: $e');
+            return false;
+          }
+        }(),
+        // [1] Spreadsheet check
+        () async {
+          try {
+            final sheetsApi = sheets.SheetsApi(client);
+            await sheetsApi.spreadsheets.get(
+              _spreadsheetId!,
+              $fields: 'spreadsheetId',
+            );
+            return true;
+          } catch (e) {
+            debugPrint('StorageConfig: spreadsheet validation failed: $e');
+            return false;
+          }
+        }(),
+      ]);
 
-      // Check Spreadsheet
-      try {
-        final sheetsApi = sheets.SheetsApi(client);
-        await sheetsApi.spreadsheets.get(
-          _spreadsheetId!,
-          $fields: 'spreadsheetId',
-        );
-        sheetOk = true;
-      } catch (e) {
-        debugPrint('StorageConfig: spreadsheet validation failed: $e');
-      }
+      folderOk = results[0];
+      sheetOk = results[1];
     } finally {
       client.close();
     }
