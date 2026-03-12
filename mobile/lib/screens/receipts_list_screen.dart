@@ -465,6 +465,7 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
                       ? Image.file(
                           File(receipt.imagePath),
                           fit: BoxFit.cover,
+                          cacheWidth: 112,
                         )
                       : Container(
                           color: Colors.grey.shade200,

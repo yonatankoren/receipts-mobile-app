@@ -14,6 +14,9 @@ from typing import List, Optional
 
 from google.cloud import vision
 
+# Module-level singleton — reuses gRPC channel + auth across requests
+_vision_client = vision.ImageAnnotatorClient()
+
 
 def extract_text_from_image(image_bytes: bytes, language_hints: Optional[List[str]] = None) -> str:
     """
@@ -25,8 +28,6 @@ def extract_text_from_image(image_bytes: bytes, language_hints: Optional[List[st
     - Superior handling of multi-line receipts
     - Better Hebrew support with proper reading order
     """
-    client = vision.ImageAnnotatorClient()
-
     image = vision.Image(content=image_bytes)
 
     # Build image context with language hints for Hebrew
@@ -34,7 +35,7 @@ def extract_text_from_image(image_bytes: bytes, language_hints: Optional[List[st
         language_hints=language_hints or ["he", "en"]
     )
 
-    response = client.document_text_detection(
+    response = _vision_client.document_text_detection(
         image=image,
         image_context=image_context,
     )

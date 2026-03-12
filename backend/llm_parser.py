@@ -21,6 +21,9 @@ from schemas import FieldConfidences
 
 logger = logging.getLogger(__name__)
 
+# Module-level singleton — reuses HTTP connection pool across requests
+_openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
 # ── Model configuration ──────────────────────────────────────────────────────
 PRIMARY_MODEL = os.environ.get("LLM_MODEL_PRIMARY", "gpt-4.1-nano")
 ESCALATION_MODEL = os.environ.get("LLM_MODEL_ESCALATION", "gpt-4.1-mini")
@@ -109,7 +112,6 @@ def _call_llm(
     currency_default: str = "ILS",
 ) -> dict:
     """Single LLM call.  Returns normalised result or error dict."""
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
     user_message = f"""טקסט OCR מקבלה (מזהה: {receipt_id}):
 ---
@@ -122,7 +124,7 @@ def _call_llm(
 חלץ את הנתונים והחזר JSON בלבד."""
 
     try:
-        response = client.chat.completions.create(
+        response = _openai_client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

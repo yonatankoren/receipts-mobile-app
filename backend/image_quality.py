@@ -49,7 +49,14 @@ def check_image_quality(image_bytes: bytes) -> dict:
             "details": {"error": str(e)},
         }
 
-    width, height = img.size
+    # Record original dimensions for the resolution check
+    orig_width, orig_height = img.size
+
+    # Downsample to ≤800×800 for analysis — blur detection and brightness
+    # work identically on a thumbnail, but use ~15× less memory and CPU.
+    img.thumbnail((800, 800))
+
+    width, height = orig_width, orig_height
 
     # Convert to grayscale for analysis
     gray = img.convert("L")
