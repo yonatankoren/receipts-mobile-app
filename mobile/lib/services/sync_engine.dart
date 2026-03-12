@@ -168,6 +168,14 @@ class SyncEngine extends ChangeNotifier {
   Future<void> _executeJob(SyncJob job) async {
     debugPrint('SyncEngine: executing ${job.jobType.name} for ${job.receiptId}');
 
+    // "Untouched first attempt" means this job was never executed before.
+    // We use this for safe fast-path optimizations on first save only.
+    final untouchedFirstAttempt =
+      job.retryCount == 0 &&
+      job.errorMessage == null &&
+      job.updatedAt.millisecondsSinceEpoch ==
+        job.createdAt.millisecondsSinceEpoch;
+
     job.status = JobStatus.inProgress;
     job.updatedAt = DateTime.now();
     await _db.updateJob(job);
@@ -178,13 +186,19 @@ class SyncEngine extends ChangeNotifier {
     try {
       switch (job.jobType) {
         case JobType.uploadImage:
-          await _executeUploadImage(job);
+          await _executeUploadImage(
+            job,
+            useFastPath: untouchedFirstAttempt,
+          );
           break;
         case JobType.processReceipt:
           await _executeProcessReceipt(job);
           break;
         case JobType.sheetsAppend:
-          await _executeSheetsAppend(job);
+          await _executeSheetsAppend(
+            job,
+            useFastPath: untouchedFirstAttempt,
+          );
           break;
       }
 
@@ -225,7 +239,10 @@ class SyncEngine extends ChangeNotifier {
 
   // --- Job executors ---
 
-  Future<void> _executeUploadImage(SyncJob job) async {
+  Future<void> _executeUploadImage(
+    SyncJob job, {
+    required bool useFastPath,
+  }) async {
     // Idempotency: check if already uploaded
     final receipt = await _db.getReceipt(job.receiptId);
     if (receipt == null) throw Exception('Receipt not found');
@@ -247,6 +264,7 @@ class SyncEngine extends ChangeNotifier {
       category: receipt.category ?? 'אחר',
       displayName: displayName,
       pdfPath: receipt.pdfPath,
+      skipRemoteExistenceCheck: useFastPath,
     );
 
     // Update receipt with Drive info and clear pdfPath (no longer needed locally)
@@ -323,11 +341,17 @@ class SyncEngine extends ChangeNotifier {
     await _db.updateReceipt(updated);
   }
 
-  Future<void> _executeSheetsAppend(SyncJob job) async {
+  Future<void> _executeSheetsAppend(
+    SyncJob job, {
+    required bool useFastPath,
+  }) async {
     final receipt = await _db.getReceipt(job.receiptId);
     if (receipt == null) throw Exception('Receipt not found');
 
-    await SheetsService.instance.appendReceiptRow(receipt);
+    await SheetsService.instance.appendReceiptRow(
+      receipt,
+      skipDuplicateCheck: useFastPath,
+    );
   }
 
   /// Check if all jobs for a receipt are done; if so, mark as synced

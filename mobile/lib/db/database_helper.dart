@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -88,6 +88,10 @@ class DatabaseHelper {
         'CREATE INDEX idx_jobs_receipt ON sync_jobs(receipt_id)');
     await db.execute(
         'CREATE INDEX idx_jobs_type_status ON sync_jobs(job_type, status)');
+    await db.execute(
+      'CREATE INDEX idx_jobs_ready_scan ON sync_jobs(status, next_retry_at, retry_count, created_at)');
+    await db.execute(
+      'CREATE INDEX idx_receipts_status_ocr ON receipts(status, raw_ocr_text)');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -99,6 +103,12 @@ class DatabaseHelper {
     }
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE receipts ADD COLUMN source_type TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_jobs_ready_scan ON sync_jobs(status, next_retry_at, retry_count, created_at)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_receipts_status_ocr ON receipts(status, raw_ocr_text)');
     }
   }
 
@@ -175,6 +185,27 @@ class DatabaseHelper {
       "SELECT COUNT(DISTINCT receipt_id) as cnt FROM sync_jobs WHERE status IN ('pending', 'failed')",
     );
     return (result.first['cnt'] as int?) ?? 0;
+  }
+
+  /// Lightweight counts used by the camera launch dashboard.
+  /// Avoids loading full receipt rows (especially raw OCR text blobs).
+  Future<({int errorCount, int reviewCount, int syncingCount})>
+      getLaunchStatusCounts() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_count,
+        SUM(CASE WHEN status = 'processing' AND raw_ocr_text IS NOT NULL THEN 1 ELSE 0 END) AS review_count,
+        SUM(CASE WHEN status = 'reviewed' THEN 1 ELSE 0 END) AS syncing_count
+      FROM receipts
+    ''');
+
+    final row = result.first;
+    return (
+      errorCount: (row['error_count'] as int?) ?? 0,
+      reviewCount: (row['review_count'] as int?) ?? 0,
+      syncingCount: (row['syncing_count'] as int?) ?? 0,
+    );
   }
 
   Future<Map<String, int>> getMonthCounts() async {

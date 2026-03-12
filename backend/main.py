@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from schemas import ProcessReceiptRequest, ProcessReceiptResponse, FieldConfidences
 from ocr_service import extract_text_from_image
 from llm_parser import parse_receipt_text
-from image_quality import check_image_quality
+from image_quality import check_image_quality, make_ocr_working_copy
 from receipt_validator import validate_ocr_text
 from validation_responses import build_validation_failure
 from auth import require_auth
@@ -82,7 +82,10 @@ async def process_receipt(
         )
         return build_validation_failure(receipt_id, reason)
 
-    # 3. OCR
+    # 3. Build OCR working copy (resized/compressed)
+    ocr_image_bytes = make_ocr_working_copy(image_bytes)
+
+    # 4. OCR
     try:
         language_hints = []
         if locale_hint.startswith("he"):
@@ -92,7 +95,7 @@ async def process_receipt(
         else:
             language_hints = [locale_hint[:2], "en"]
 
-        ocr_text = extract_text_from_image(image_bytes, language_hints)
+        ocr_text = extract_text_from_image(ocr_image_bytes, language_hints)
         logger.info(f"OCR for {receipt_id}: {len(ocr_text)} chars extracted")
     except Exception as e:
         logger.error(f"OCR failed for {receipt_id}: {e}")
@@ -102,7 +105,7 @@ async def process_receipt(
         logger.warning(f"No text extracted for {receipt_id}")
         return build_validation_failure(receipt_id, "unreadable_receipt")
 
-    # 4. OCR quality + receipt-likeliness validation (BEFORE LLM)
+    # 5. OCR quality + receipt-likeliness validation (BEFORE LLM)
     validation_result = validate_ocr_text(ocr_text)
     if not validation_result["passed"]:
         reason = validation_result["reason"] or "unreadable_receipt"
@@ -112,7 +115,7 @@ async def process_receipt(
         )
         return build_validation_failure(receipt_id, reason)
 
-    # 5. LLM Parse (only reached if all validation passed)
+    # 6. LLM Parse (only reached if all validation passed)
     try:
         parsed = parse_receipt_text(
             ocr_text=ocr_text,
@@ -129,7 +132,7 @@ async def process_receipt(
             error=f"LLM parsing failed: {e}",
         )
 
-    # 6. Build success response
+    # 7. Build success response
     conf = parsed.get("confidence", {})
     return ProcessReceiptResponse(
         receipt_id=parsed.get("receipt_id", receipt_id),
@@ -176,8 +179,10 @@ async def ocr_only(
     else:
         language_hints = [locale_hint[:2], "en"]
 
+    ocr_image_bytes = make_ocr_working_copy(image_bytes)
+
     try:
-        ocr_text = extract_text_from_image(image_bytes, language_hints)
+        ocr_text = extract_text_from_image(ocr_image_bytes, language_hints)
         logger.info(f"OCR-only: {len(ocr_text)} chars extracted (user: {user_email})")
     except Exception as e:
         logger.error(f"OCR-only failed: {e}")

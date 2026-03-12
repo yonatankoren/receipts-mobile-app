@@ -9,7 +9,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/expense.dart';
 import '../models/receipt_validation_exception.dart';
@@ -501,47 +500,12 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
 
   /// Capture a photo using the device camera
   Future<String?> _captureFromCamera() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) return null;
-
-      final backCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      final controller = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-
-      await controller.initialize();
-
-      if (!mounted) {
-        controller.dispose();
-        return null;
-      }
-
-      // Use ImagePicker for simpler camera capture in this context
-      controller.dispose();
-
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 90,
-      );
-      return picked?.path;
-    } catch (e) {
-      // Fallback to ImagePicker
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 90,
-      );
-      return picked?.path;
-    }
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 90,
+    );
+    return picked?.path;
   }
 
   void _showProcessingOverlay() {

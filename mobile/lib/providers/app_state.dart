@@ -21,11 +21,19 @@ class AppState extends ChangeNotifier {
 
   List<Receipt> _receipts = [];
   List<Expense> _expenses = [];
+  int _errorBannerCount = 0;
+  int _reviewBannerCount = 0;
+  int _syncingBannerCount = 0;
+  int _pendingExpenseCount = 0;
   bool _isLoading = false;
   String? _error;
 
   List<Receipt> get receipts => _receipts;
   List<Expense> get expenses => _expenses;
+  int get errorBannerCount => _errorBannerCount;
+  int get reviewBannerCount => _reviewBannerCount;
+  int get syncingBannerCount => _syncingBannerCount;
+  int get pendingExpenseCount => _pendingExpenseCount;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -54,7 +62,24 @@ class AppState extends ChangeNotifier {
       _error = e.toString();
     }
     _isLoading = false;
+    await loadLaunchDashboardCounts(notify: false);
     notifyListeners();
+  }
+
+  /// Loads only lightweight launch/dashboard counts from SQLite.
+  /// This is safe to call frequently and avoids loading full receipt rows.
+  Future<void> loadLaunchDashboardCounts({bool notify = true}) async {
+    try {
+      final counts = await _db.getLaunchStatusCounts();
+      final expenseCount = await _db.getExpenseCount();
+      _errorBannerCount = counts.errorCount;
+      _reviewBannerCount = counts.reviewCount;
+      _syncingBannerCount = counts.syncingCount;
+      _pendingExpenseCount = expenseCount;
+    } catch (e) {
+      debugPrint('AppState: failed to load dashboard counts: $e');
+    }
+    if (notify) notifyListeners();
   }
 
   /// Core capture flow: save image locally, create receipt, enqueue jobs.
@@ -310,6 +335,7 @@ class AppState extends ChangeNotifier {
 
     // Trigger sync to push any remaining jobs
     SyncEngine.instance.runPendingJobs();
+    await loadLaunchDashboardCounts();
   }
 
   /// Refresh a single receipt from DB
@@ -345,6 +371,7 @@ class AppState extends ChangeNotifier {
   Future<void> loadExpenses() async {
     try {
       _expenses = await _db.getAllExpenses();
+      _pendingExpenseCount = _expenses.length;
     } catch (e) {
       debugPrint('AppState: failed to load expenses: $e');
     }
@@ -368,6 +395,7 @@ class AppState extends ChangeNotifier {
 
     await _db.insertExpense(expense);
     _expenses.insert(0, expense);
+    _pendingExpenseCount = _expenses.length;
     // Re-sort by date descending
     _expenses.sort((a, b) => b.date.compareTo(a.date));
     notifyListeners();
@@ -380,6 +408,7 @@ class AppState extends ChangeNotifier {
   Future<void> deleteExpense(String expenseId) async {
     await _db.deleteExpense(expenseId);
     _expenses.removeWhere((e) => e.id == expenseId);
+    _pendingExpenseCount = _expenses.length;
     notifyListeners();
   }
 
@@ -435,8 +464,10 @@ class AppState extends ChangeNotifier {
     // Delete the expense
     await _db.deleteExpense(expenseId);
     _expenses.removeWhere((e) => e.id == expenseId);
+    _pendingExpenseCount = _expenses.length;
 
     notifyListeners();
+    await loadLaunchDashboardCounts();
     debugPrint('AppState: confirmed expense receipt, expense=$expenseId deleted');
   }
 
@@ -481,6 +512,7 @@ class AppState extends ChangeNotifier {
     await _db.deleteReceipt(receiptId);
     _receipts.removeWhere((r) => r.id == receiptId);
     notifyListeners();
+    await loadLaunchDashboardCounts();
 
     debugPrint('deleteReceiptFully: fully deleted receipt $receiptId');
   }
@@ -503,6 +535,7 @@ class AppState extends ChangeNotifier {
       await _db.deleteReceipt(receiptId);
       _receipts.removeWhere((r) => r.id == receiptId);
       notifyListeners();
+      await loadLaunchDashboardCounts();
     }
     debugPrint('AppState: cancelled expense receipt $receiptId');
   }

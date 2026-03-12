@@ -1,6 +1,6 @@
 /// Google Drive service.
 /// Handles uploading receipt images to organized folders by month and category.
-/// Folder structure: <root>/YYYY-MM/category/<merchant> <MM-YYYY>.jpg
+/// Folder structure: root/YYYY-MM/category/merchant MM-YYYY.jpg
 ///
 /// The root folder ID comes from StorageConfigService (set during onboarding).
 /// Subfolders are created lazily — only when a receipt needs them.
@@ -32,6 +32,7 @@ class DriveService {
     required String category, // e.g. "מזון", "תחבורה", "אחר"
     required String displayName, // e.g. "רמי לוי 03/2025"
     String? pdfPath, // if set, upload the PDF instead of the image
+    bool skipRemoteExistenceCheck = false,
   }) async {
     final client = await AuthService.instance.getAuthenticatedClient();
     if (client == null) {
@@ -69,19 +70,23 @@ class DriveService {
       );
 
       // 3. Check if file already exists (idempotency)
-      final existing = await driveApi.files.list(
-        q: "name = '${escQ(fileName)}' and '$categoryFolderId' in parents and trashed = false",
-        spaces: 'drive',
-        $fields: 'files(id, webViewLink)',
-      );
-
-      if (existing.files != null && existing.files!.isNotEmpty) {
-        final file = existing.files!.first;
-        debugPrint('Drive: file already exists: ${file.id}');
-        return (
-          fileId: file.id!,
-          fileLink: file.webViewLink ?? 'https://drive.google.com/file/d/${file.id}/view',
+      // Skipped only for untouched first-attempt jobs to reduce round trips.
+      if (!skipRemoteExistenceCheck) {
+        final existing = await driveApi.files.list(
+          q: "name = '${escQ(fileName)}' and '$categoryFolderId' in parents and trashed = false",
+          spaces: 'drive',
+          $fields: 'files(id, webViewLink)',
         );
+
+        if (existing.files != null && existing.files!.isNotEmpty) {
+          final file = existing.files!.first;
+          debugPrint('Drive: file already exists: ${file.id}');
+          return (
+            fileId: file.id!,
+            fileLink:
+                file.webViewLink ?? 'https://drive.google.com/file/d/${file.id}/view',
+          );
+        }
       }
 
       // 4. Upload the file into the category subfolder

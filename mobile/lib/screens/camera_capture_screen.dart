@@ -14,7 +14,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/receipt_validation_exception.dart';
-import '../models/receipt.dart';
 import '../providers/app_state.dart';
 import '../services/drive_service.dart';
 import '../services/pdf_import_service.dart';
@@ -55,17 +54,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     WidgetsBinding.instance.addObserver(this);
     _wasOnline = SyncEngine.instance.isOnline;
     SyncEngine.instance.addListener(_onConnectivityChanged);
-    // Refresh in-memory receipts whenever SyncEngine updates a receipt status
+    // Refresh lightweight dashboard counts whenever SyncEngine updates status
     SyncEngine.instance.onReceiptsChanged = () {
       if (mounted) {
-        context.read<AppState>().loadReceipts();
+        context.read<AppState>().loadLaunchDashboardCounts();
       }
     };
     _initCamera();
-    // Load expenses + receipts so badge & banner counts are available
+    // Load lightweight counts only (avoid full receipt load on launch)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().loadExpenses();
-      context.read<AppState>().loadReceipts();
+      context.read<AppState>().loadLaunchDashboardCounts();
     });
   }
 
@@ -399,7 +397,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     super.build(context);
     final isOnline = SyncEngine.instance.isOnline;
     final appState = context.watch<AppState>();
-    final pendingExpenses = appState.expenses.length;
+    final pendingExpenses = appState.pendingExpenseCount;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -510,15 +508,15 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                       label: 'ממתינות',
                       badgeCount: pendingExpenses,
                       onTap: () async {
+                        final appState = context.read<AppState>();
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const ExpensesListScreen(),
                           ),
                         );
-                        if (mounted) {
-                          context.read<AppState>().loadExpenses();
-                        }
+                        if (!mounted) return;
+                        appState.loadLaunchDashboardCounts();
                       },
                     ),
 
@@ -567,15 +565,15 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                       icon: Icons.receipt_long,
                       label: 'קבלות',
                       onTap: () async {
+                        final appState = context.read<AppState>();
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const ReceiptsListScreen(),
                           ),
                         );
-                        if (mounted) {
-                          context.read<AppState>().loadReceipts();
-                        }
+                        if (!mounted) return;
+                        appState.loadLaunchDashboardCounts();
                       },
                     ),
 
@@ -716,14 +714,9 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   // ─── Status banners (non-tappable) ────────────────────────────
 
   List<Widget> _buildStatusBanners(AppState appState) {
-    final receipts = appState.receipts;
-
-    // Compute counts
-    final errorCount = receipts.where((r) => r.status == ReceiptStatus.error).length;
-    final reviewCount = receipts.where(
-      (r) => r.status == ReceiptStatus.processing && r.rawOcrText != null,
-    ).length;
-    final syncingCount = receipts.where((r) => r.status == ReceiptStatus.reviewed).length;
+    final errorCount = appState.errorBannerCount;
+    final reviewCount = appState.reviewBannerCount;
+    final syncingCount = appState.syncingBannerCount;
 
     if (errorCount == 0 && reviewCount == 0 && syncingCount == 0) return [];
 

@@ -167,7 +167,10 @@ class SheetsService {
 
   /// Insert a receipt row into the correct year tab at the correct sorted
   /// position, apply month color, borders, and ensure the totals tab exists.
-  Future<void> appendReceiptRow(Receipt receipt) async {
+  Future<void> appendReceiptRow(
+    Receipt receipt, {
+    bool skipDuplicateCheck = false,
+  }) async {
     final spreadsheetId = getSpreadsheetId();
     if (spreadsheetId == null || spreadsheetId.isEmpty) {
       throw Exception('Spreadsheet ID not configured. Complete onboarding first.');
@@ -199,12 +202,18 @@ class SheetsService {
       }
 
       // 3. Idempotency: check receipt_id in column G
-      final dup = await _isReceiptIdInSheet(
-        api, spreadsheetId, expensesTab, receipt.id,
-      );
-      if (dup) {
-        debugPrint('Sheets: receipt ${receipt.id} already exists in $expensesTab, skipping');
-        return;
+      if (!skipDuplicateCheck) {
+        final dup = await _isReceiptIdInSheet(
+          api,
+          spreadsheetId,
+          expensesTab,
+          receipt.id,
+        );
+        if (dup) {
+          debugPrint(
+              'Sheets: receipt ${receipt.id} already exists in $expensesTab, skipping');
+          return;
+        }
       }
 
       // 4. Read existing month column (A) to find insertion point

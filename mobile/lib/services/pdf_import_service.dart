@@ -44,6 +44,7 @@ class PdfImportService {
 
   static const int maxPages = 4;
   static const int maxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
+  static const int ocrMaxLongEdgePx = 2200;
 
   /// Process a PDF file: render pages → OCR each → merge text.
   ///
@@ -80,7 +81,6 @@ class PdfImportService {
     final tempDir = await getTemporaryDirectory();
     String? firstPagePath;
     final ocrParts = <String>[];
-    final tempFiles = <File>[];
 
     try {
       for (int i = 1; i <= pageCount; i++) {
@@ -88,9 +88,10 @@ class PdfImportService {
 
         // Render page to image
         final page = await document.getPage(i);
+        final targetSize = _targetRenderSize(page.width, page.height);
         final pageImage = await page.render(
-          width: page.width * 2,
-          height: page.height * 2,
+          width: targetSize.width,
+          height: targetSize.height,
           format: PdfPageImageFormat.jpeg,
           backgroundColor: '#ffffff',
         );
@@ -100,18 +101,18 @@ class PdfImportService {
           throw ImportException('לא ניתן לקרוא עמוד $i');
         }
 
-        final ts = DateTime.now().millisecondsSinceEpoch;
-        final pagePath = '${tempDir.path}/pdf_page_${i}_$ts.jpg';
-        final pageFile = File(pagePath);
-        await pageFile.writeAsBytes(pageImage.bytes);
-        tempFiles.add(pageFile);
-
-        if (i == 1) firstPagePath = pagePath;
+        if (i == 1) {
+          final ts = DateTime.now().millisecondsSinceEpoch;
+          final pagePath = '${tempDir.path}/pdf_page_${i}_$ts.jpg';
+          final pageFile = File(pagePath);
+          await pageFile.writeAsBytes(pageImage.bytes);
+          firstPagePath = pagePath;
+        }
 
         // OCR this page via backend
         try {
-          final ocrText = await BackendService.instance.ocrOnly(
-            imagePath: pagePath,
+          final ocrText = await BackendService.instance.ocrOnlyBytes(
+            imageBytes: pageImage.bytes,
           );
           if (ocrText.trim().isNotEmpty) {
             ocrParts.add(ocrText.trim());
@@ -125,14 +126,6 @@ class PdfImportService {
       }
     } finally {
       await document.close();
-      // Clean up temp files except the first page (used as receipt image)
-      for (final f in tempFiles) {
-        if (f.path != firstPagePath) {
-          try {
-            await f.delete();
-          } catch (_) {}
-        }
-      }
     }
 
     if (ocrParts.isEmpty) {
@@ -151,6 +144,22 @@ class PdfImportService {
       firstPageImagePath: firstPagePath!,
       originalPdfPath: filePath,
       pageCount: pageCount,
+    );
+  }
+
+  ({double width, double height}) _targetRenderSize(
+    double srcWidth,
+    double srcHeight,
+  ) {
+    final longEdge = srcWidth > srcHeight ? srcWidth : srcHeight;
+    if (longEdge <= ocrMaxLongEdgePx) {
+      return (width: srcWidth, height: srcHeight);
+    }
+
+    final scale = ocrMaxLongEdgePx / longEdge;
+    return (
+      width: srcWidth * scale,
+      height: srcHeight * scale,
     );
   }
 }

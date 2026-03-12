@@ -22,6 +22,10 @@ BRIGHTNESS_TOO_DARK = 40.0            # Average grayscale below this → too dar
 MIN_WIDTH = 200                        # Minimum image width in pixels
 MIN_HEIGHT = 200                       # Minimum image height in pixels
 
+# OCR working-copy tuning (keeps OCR quality while reducing payload/latency)
+OCR_MAX_LONG_EDGE = 2200
+OCR_JPEG_QUALITY = 85
+
 
 def check_image_quality(image_bytes: bytes) -> dict:
     """
@@ -96,6 +100,49 @@ def check_image_quality(image_bytes: bytes) -> dict:
         f"(size {width}x{height}, blur {blur_score:.1f}, brightness {avg_brightness:.1f})"
     )
     return _result(True, None, width, height, blur_score, avg_brightness)
+
+
+def make_ocr_working_copy(
+    image_bytes: bytes,
+    max_long_edge: int = OCR_MAX_LONG_EDGE,
+    jpeg_quality: int = OCR_JPEG_QUALITY,
+) -> bytes:
+    """
+    Build a resized/compressed working copy for OCR.
+
+    - Preserves aspect ratio.
+    - Caps the long edge to [max_long_edge].
+    - Encodes as JPEG for smaller upload + OCR processing cost.
+    - Falls back to original bytes on any error.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        # Normalize to RGB for JPEG encoding
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        width, height = img.size
+        long_edge = max(width, height)
+
+        if long_edge > max_long_edge:
+            scale = max_long_edge / float(long_edge)
+            new_size = (
+                max(1, int(width * scale)),
+                max(1, int(height * scale)),
+            )
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        out = io.BytesIO()
+        img.save(
+            out,
+            format="JPEG",
+            quality=jpeg_quality,
+            optimize=True,
+        )
+        return out.getvalue()
+    except Exception as e:
+        logger.warning(f"OCR working copy failed, using original bytes: {e}")
+        return image_bytes
 
 
 def _laplacian_variance(gray_array: np.ndarray) -> float:

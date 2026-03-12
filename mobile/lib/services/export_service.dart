@@ -21,6 +21,19 @@ import 'auth_service.dart';
 bool _isSyncedToDrive(Receipt r) =>
     r.driveFileId != null && r.driveFileId!.isNotEmpty;
 
+/// Build ZIP bytes in a background isolate from path+bytes entries.
+Uint8List _encodeZipEntries(List<Map<String, dynamic>> entries) {
+  final archive = Archive();
+  for (final entry in entries) {
+    final path = entry['path'] as String;
+    final bytes = entry['bytes'] as Uint8List;
+    archive.addFile(ArchiveFile(path, bytes.length, bytes));
+  }
+
+  final encoded = ZipEncoder().encode(archive);
+  return Uint8List.fromList(encoded);
+}
+
 class ExportService {
   static final ExportService instance = ExportService._();
   ExportService._();
@@ -38,7 +51,7 @@ class ExportService {
     void Function(String)? onProgress,
   }) async {
     final db = DatabaseHelper.instance;
-    final archive = Archive();
+    final zipEntries = <Map<String, dynamic>>[];
 
     // ── 1. Gather receipts for selected months (synced to Drive only) ──
     onProgress?.call('אוסף את הקבלות…');
@@ -123,9 +136,10 @@ class ExportService {
                 .replaceAll('/', '-')
                 .replaceAll(r'\', '-');
             final archivePath = '$monthKey/$category/$safeFileName';
-            archive.addFile(
-              ArchiveFile(archivePath, result.bytes.length, result.bytes),
-            );
+            zipEntries.add({
+              'path': archivePath,
+              'bytes': result.bytes,
+            });
           } catch (e) {
             debugPrint(
               'ExportService: failed to add receipt ${receipt.id}: $e',
@@ -145,11 +159,14 @@ class ExportService {
     final csvBytes = Uint8List.fromList(
       [0xEF, 0xBB, 0xBF, ...utf8.encode(csvContent)],
     );
-    archive.addFile(ArchiveFile('summary.csv', csvBytes.length, csvBytes));
+    zipEntries.add({
+      'path': 'summary.csv',
+      'bytes': csvBytes,
+    });
 
     // ── 4. Encode ZIP ──
     onProgress?.call('יוצר קובץ ZIP…');
-    final zipData = ZipEncoder().encode(archive);
+    final zipData = await compute(_encodeZipEntries, zipEntries);
 
     // ── 5. Write to cache directory ──
     onProgress?.call('מכין את הקובץ לשליחה…');
@@ -165,7 +182,7 @@ class ExportService {
 
     debugPrint(
       'ExportService: created ZIP at ${zipFile.path} '
-      '(${zipData.length} bytes, ${archive.length} files)',
+      '(${zipData.length} bytes, ${zipEntries.length} files)',
     );
     return zipFile.path;
   }

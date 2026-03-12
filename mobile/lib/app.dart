@@ -187,19 +187,8 @@ class _HomeRouterState extends State<HomeRouter> {
       return;
     }
 
-    // Step 3: Fully configured — validate access
-    final validation = await config.validateAccess();
-    if (!validation.allOk) {
-      if (mounted) {
-        setState(() {
-          _destination = const StorageSetupScreen(isRelink: true);
-          _isChecking = false;
-        });
-      }
-      return;
-    }
-
-    // All good — go to main pager (camera + statistics)
+    // Step 3: Fully configured — go to main pager immediately.
+    // Access validation runs in background so first camera frame is not blocked.
     if (mounted) {
       setState(() {
         _destination = const MainPagerScreen();
@@ -208,7 +197,19 @@ class _HomeRouterState extends State<HomeRouter> {
 
       // If the app was cold-started via a share intent, route to import now
       _handlePendingShare();
+
+      unawaited(_validateAccessInBackground());
     }
+  }
+
+  Future<void> _validateAccessInBackground() async {
+    final config = StorageConfigService.instance;
+    final validation = await config.validateAccess();
+    if (!mounted || validation.allOk) return;
+
+    setState(() {
+      _destination = const StorageSetupScreen(isRelink: true);
+    });
   }
 
   void _handlePendingShare() {

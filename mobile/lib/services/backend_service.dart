@@ -87,6 +87,63 @@ class BackendService {
     return data;
   }
 
+  /// Send raw image bytes to the backend for processing (OCR + LLM parse).
+  /// Used to avoid temporary file churn in byte-oriented pipelines.
+  Future<Map<String, dynamic>> processReceiptBytes({
+    required Uint8List imageBytes,
+    required String receiptId,
+    String locale = 'he-IL',
+    String currencyDefault = 'ILS',
+  }) async {
+    final backendUrl = await getBackendUrl();
+    final uri = Uri.parse('$backendUrl/processReceipt');
+
+    if (imageBytes.isEmpty) {
+      throw Exception('Image bytes are empty');
+    }
+
+    // Get Google access token for backend authentication
+    final accessToken = await AuthService.instance.getAccessToken();
+    if (accessToken == null) {
+      throw Exception('Not authenticated — please sign in first');
+    }
+
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $accessToken'
+      ..fields['receipt_id'] = receiptId
+      ..fields['locale_hint'] = locale
+      ..fields['currency_default'] = currencyDefault
+      ..fields['timezone'] = AppConstants.defaultTimezone
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: '$receiptId.jpg',
+        ),
+      );
+
+    debugPrint('Backend: sending receipt bytes $receiptId to $uri');
+
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 60),
+      onTimeout: () {
+        throw Exception('Backend request timed out');
+      },
+    );
+
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Backend returned ${response.statusCode}: ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    debugPrint('Backend: got response for byte request $receiptId');
+    return data;
+  }
+
   /// OCR-only: send an image and get back raw OCR text (no LLM).
   /// Used for PDF page-by-page OCR where text is merged before LLM.
   ///
@@ -131,6 +188,56 @@ class BackendService {
     // Fallback: use /processReceipt and extract raw_ocr_text
     final result = await processReceipt(
       imagePath: imagePath,
+      receiptId: 'ocr_${DateTime.now().millisecondsSinceEpoch}',
+      locale: locale,
+    );
+    return (result['raw_ocr_text'] as String?) ?? '';
+  }
+
+  /// OCR-only with in-memory bytes to avoid temp file writes/reads.
+  Future<String> ocrOnlyBytes({
+    required Uint8List imageBytes,
+    String locale = 'he-IL',
+  }) async {
+    final backendUrl = await getBackendUrl();
+    final accessToken = await AuthService.instance.getAccessToken();
+    if (accessToken == null) {
+      throw Exception('Not authenticated — please sign in first');
+    }
+
+    // Try dedicated /ocrOnly endpoint
+    try {
+      final uri = Uri.parse('$backendUrl/ocrOnly');
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Authorization'] = 'Bearer $accessToken'
+        ..fields['locale_hint'] = locale
+        ..files.add(http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: 'ocr_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ));
+
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw Exception('OCR request timed out'),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return (data['ocr_text'] as String?) ?? '';
+      }
+
+      debugPrint(
+        'ocrOnlyBytes: endpoint returned ${response.statusCode}, using fallback',
+      );
+    } catch (e) {
+      debugPrint('ocrOnlyBytes: endpoint unavailable ($e), using fallback');
+    }
+
+    // Fallback: use /processReceipt and extract raw_ocr_text
+    final result = await processReceiptBytes(
+      imageBytes: imageBytes,
       receiptId: 'ocr_${DateTime.now().millisecondsSinceEpoch}',
       locale: locale,
     );
