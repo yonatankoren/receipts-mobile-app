@@ -29,7 +29,7 @@ class Receipt {
     this.merchantName,
     this.receiptDate,
     this.totalAmount,
-    this.currency = 'ILS',
+    this.currency = '',
     this.category,
     this.driveFileId,
     this.driveFileLink,
@@ -110,7 +110,7 @@ class Receipt {
       totalAmount: map['total_amount'] != null
           ? (map['total_amount'] as num).toDouble()
           : null,
-      currency: (map['currency'] as String?) ?? 'ILS',
+      currency: (map['currency'] as String?) ?? '',
       category: map['category'] as String?,
       driveFileId: map['drive_file_id'] as String?,
       driveFileLink: map['drive_file_link'] as String?,

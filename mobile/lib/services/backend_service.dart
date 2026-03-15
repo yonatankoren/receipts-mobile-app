@@ -34,7 +34,7 @@ class BackendService {
     required String imagePath,
     required String receiptId,
     String locale = 'he-IL',
-    String currencyDefault = 'ILS',
+    String currencyDefault = '',
   }) async {
     final backendUrl = await getBackendUrl();
     final uri = Uri.parse('$backendUrl/processReceipt');
@@ -93,7 +93,7 @@ class BackendService {
     required Uint8List imageBytes,
     required String receiptId,
     String locale = 'he-IL',
-    String currencyDefault = 'ILS',
+    String currencyDefault = '',
   }) async {
     final backendUrl = await getBackendUrl();
     final uri = Uri.parse('$backendUrl/processReceipt');
@@ -250,7 +250,7 @@ class BackendService {
     required String ocrText,
     required String receiptId,
     String locale = 'he-IL',
-    String currencyDefault = 'ILS',
+    String currencyDefault = '',
   }) async {
     final backendUrl = await getBackendUrl();
     final uri = Uri.parse('$backendUrl/parseReceipt');

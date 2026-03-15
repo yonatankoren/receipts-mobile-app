@@ -72,6 +72,8 @@ class ReviewAndFixScreen extends StatefulWidget {
 }
 
 class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
+  static const List<String> _allowedCurrencies = ['ILS', 'USD', 'EUR'];
+
   Receipt? _receipt;
   bool _isLoading = true;
   bool _isSaving = false;
@@ -81,7 +83,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
   final _merchantController = TextEditingController();
   final _dateController = TextEditingController();
   final _amountController = TextEditingController();
-  final _currencyController = TextEditingController();
+  String? _selectedCurrency;
   String? _selectedCategory;
 
   /// Top 3 most-used categories (loaded from DB).
@@ -109,7 +111,6 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
     _merchantController.dispose();
     _dateController.dispose();
     _amountController.dispose();
-    _currencyController.dispose();
     super.dispose();
   }
 
@@ -149,7 +150,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
     return '$year-$month-$day';
   }
 
-  String _normalizeCurrency(String? raw, {String fallback = 'ILS'}) {
+  String _normalizeCurrency(String? raw, {String fallback = ''}) {
     var value = (raw ?? '')
         .replaceAll(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]'), '')
         .trim();
@@ -159,6 +160,17 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
         .replaceAll(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]'), '')
         .trim()
         .toUpperCase();
+
+    if (value.contains('€') || value.contains('EUR')) return 'EUR';
+    if (value == r'$' || value.contains('US\$') || value.contains('USD')) return 'USD';
+    if (value.contains('₪') ||
+        value.contains('NIS') ||
+        value.contains('ILS') ||
+        value.contains('ש"ח') ||
+        value.contains("ש'ח") ||
+        value.contains('שח')) {
+      return 'ILS';
+    }
 
     switch (value) {
       case '₪':
@@ -170,8 +182,17 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
       case 'ILS.':
       case 'ILS':
         return 'ILS';
+      case r'$':
+      case 'US\$':
+      case 'USD':
+      case 'USD.':
+        return 'USD';
+      case '€':
+      case 'EUR':
+      case 'EUR.':
+        return 'EUR';
       default:
-        return value.isNotEmpty ? value : 'ILS';
+        return _allowedCurrencies.contains(value) ? value : '';
     }
   }
 
@@ -183,7 +204,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
     _amountController.text =
         receipt.totalAmount?.toStringAsFixed(2) ?? '';
     final normalizedCurrency = _normalizeCurrency(receipt.currency);
-    _currencyController.text = normalizedCurrency;
+    _selectedCurrency = normalizedCurrency.isNotEmpty ? normalizedCurrency : null;
 
     final normalizedCategory = receipt.category?.trim();
     _selectedCategory =
@@ -212,6 +233,12 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
 
   Future<void> _save() async {
     if (_receipt == null || _isSaving) return;
+
+    final finalCurrency = _normalizeCurrency(_selectedCurrency);
+    if (finalCurrency.isEmpty) {
+      await _showCurrencyRequiredDialog();
+      return;
+    }
 
     final appState = context.read<AppState>();
     final receiptAmount = double.tryParse(_amountController.text);
@@ -274,7 +301,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
             : null,
         receiptDate: finalIsoDate,
         totalAmount: finalAmount,
-        currency: _normalizeCurrency(_currencyController.text),
+        currency: finalCurrency,
         category: (_selectedCategory != null && _selectedCategory!.trim().isNotEmpty)
           ? _selectedCategory!.trim()
           : 'אחר',
@@ -854,14 +881,8 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildField(
-                  label: 'מטבע',
-                  controller: _currencyController,
-                  icon: Icons.currency_exchange,
-                  confidence: null,
-                  showPrefixIcon: false,
-                  textDirection: TextDirection.ltr,
-                  textAlign: TextAlign.left,
+                child: _buildCurrencyDropdown(
+                  confidence: confidences['currency'],
                 ),
               ),
             ],
@@ -1254,6 +1275,57 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
             const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       ),
       style: const TextStyle(fontSize: 18),
+    );
+  }
+
+  Future<void> _showCurrencyRequiredDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Currency required'),
+        content: const Text('please choose currency'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrencyDropdown({double? confidence}) {
+    confidence;
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: DropdownButtonFormField<String>(
+        value: _selectedCurrency,
+        items: _allowedCurrencies
+            .map(
+              (currency) => DropdownMenuItem<String>(
+                value: currency,
+                child: Text(currency, style: const TextStyle(fontSize: 15)),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          setState(() {
+            _selectedCurrency = value;
+          });
+        },
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'מטבע',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        ),
+        style: const TextStyle(fontSize: 15, color: Colors.black87),
+        dropdownColor: Colors.white,
+      ),
     );
   }
 

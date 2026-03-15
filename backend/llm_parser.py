@@ -14,6 +14,7 @@ with exponential backoff.
 import json
 import os
 import logging
+import re
 from typing import Optional
 
 from openai import OpenAI
@@ -32,6 +33,7 @@ ESCALATION_MODEL = os.environ.get("LLM_MODEL_ESCALATION", "gpt-4.1-mini")
 # the escalation model.  Tuned so ≥80% of standard receipts (clear text,
 # common merchants) stay on the primary model — they typically score 0.7–0.95.
 ESCALATION_THRESHOLD = float(os.environ.get("ESCALATION_THRESHOLD", "0.6"))
+ALLOWED_CURRENCIES = {"ILS", "USD", "EUR"}
 
 SYSTEM_PROMPT = """אתה מערכת לחילוץ נתונים מקבלות. אתה מקבל טקסט גולמי מ-OCR של קבלה ומחזיר JSON מובנה.
 
@@ -40,7 +42,7 @@ SYSTEM_PROMPT = """אתה מערכת לחילוץ נתונים מקבלות. א�
 2. תאריך הקבלה בפורמט ISO: YYYY-MM-DD
 3. פורמט תאריך ישראלי: dd/mm/yyyy (יום לפני חודש). כלומר 05/03/2025 = 5 במרץ 2025.
 4. הסכום הכולל הוא הסכום הסופי לתשלום (כולל מע"מ).
-5. מטבע ברירת מחדל: ILS (אלא אם מופיע מטבע אחר בקבלה).
+5. החזר מטבע רק מתוך: ILS, USD, EUR. אם אין ודאות מספקת, החזר מחרוזת ריקה "".
 6. דרג את הביטחון שלך בכל שדה מ-0.0 עד 1.0.
 7. אם שדה לא ניתן לחילוץ, החזר null עם ביטחון 0.0.
 8. קטגוריה — בחר מתוך הרשימה הבאה בלבד, ותמיד החזר קטגוריה אחת (אין null):
@@ -51,7 +53,7 @@ SYSTEM_PROMPT = """אתה מערכת לחילוץ נתונים מקבלות. א�
   "merchant_name": "שם העסק או null",
   "receipt_date": "YYYY-MM-DD או null",
   "total_amount": 123.45,
-  "currency": "ILS",
+    "currency": "ILS | USD | EUR | \"\"",
     "category": "קטגוריה",
   "confidence": {
     "merchant_name": 0.95,
@@ -76,12 +78,16 @@ def parse_receipt_text(
       1. Call PRIMARY_MODEL (cheap).
       2. If overall confidence < ESCALATION_THRESHOLD, call ESCALATION_MODEL.
     """
+    detected_currency = _detect_currency_from_text(ocr_text)
+    normalized_default = _normalize_currency(currency_default, "")
+    effective_currency_default = detected_currency or normalized_default
+
     result = _call_llm(
         ocr_text=ocr_text,
         receipt_id=receipt_id,
         model=PRIMARY_MODEL,
         locale_hint=locale_hint,
-        currency_default=currency_default,
+        currency_default=effective_currency_default,
     )
 
     if result.get("error"):
@@ -98,7 +104,7 @@ def parse_receipt_text(
             receipt_id=receipt_id,
             model=ESCALATION_MODEL,
             locale_hint=locale_hint,
-            currency_default=currency_default,
+            currency_default=effective_currency_default,
         )
 
     return result
@@ -179,7 +185,7 @@ def _error_response(receipt_id: str, error_msg: str) -> dict:
         "merchant_name": None,
         "receipt_date": None,
         "total_amount": None,
-        "currency": "ILS",
+        "currency": "",
         "category": "אחר",
         "confidence": {
             "merchant_name": 0.0,
@@ -209,10 +215,57 @@ def _clamp(val, lo=0.0, hi=1.0) -> float:
 
 
 def _normalize_currency(currency_val, currency_default: str) -> str:
+    fallback = str(currency_default or "").strip().upper()
+    if fallback not in ALLOWED_CURRENCIES:
+        fallback = ""
+
     if currency_val is None:
-        return currency_default
-    value = str(currency_val).strip().upper()
-    return value if value else currency_default
+        return fallback
+
+    value = str(currency_val)
+    value = re.sub(r"[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]", "", value)
+    value = value.strip().upper()
+
+    aliases = {
+        "₪": "ILS",
+        "ש\"ח": "ILS",
+        "ש'ח": "ILS",
+        "שח": "ILS",
+        "NIS": "ILS",
+        "N.I.S": "ILS",
+        "ILS.": "ILS",
+        "ILS": "ILS",
+        "$": "USD",
+        "US$": "USD",
+        "USD.": "USD",
+        "USD": "USD",
+        "€": "EUR",
+        "EUR.": "EUR",
+        "EURO": "EUR",
+        "EUROS": "EUR",
+        "EUR": "EUR",
+    }
+
+    normalized = aliases.get(value, value)
+    return normalized if normalized in ALLOWED_CURRENCIES else fallback
+
+
+def _detect_currency_from_text(ocr_text: str) -> Optional[str]:
+    if not ocr_text:
+        return None
+
+    text = ocr_text.upper()
+
+    if re.search(r"(?:€|\bEUR\b|\bEURO\b|\bEUROS\b)", text):
+        return "EUR"
+
+    if re.search(r"(?:\bUSD\b|US\$|\$|\bDOLLAR\b)", text):
+        return "USD"
+
+    if re.search(r"(?:₪|\bILS\b|\bNIS\b|ש\"ח|שח)", text):
+        return "ILS"
+
+    return None
 
 
 def _normalize_category(category_val) -> str:

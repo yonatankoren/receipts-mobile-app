@@ -24,6 +24,8 @@ import 'sheets_service.dart';
 import 'backend_service.dart';
 
 class SyncEngine extends ChangeNotifier {
+  static const Set<String> _allowedCurrencies = {'ILS', 'USD', 'EUR'};
+
   static final SyncEngine instance = SyncEngine._();
   SyncEngine._();
 
@@ -331,7 +333,7 @@ class SyncEngine extends ChangeNotifier {
     // Update receipt with parsed data
     final normalizedCurrency = _normalizeCurrency(
       result['currency'] as String?,
-      fallback: receipt.currency,
+      fallback: '',
     );
 
     final parsedCategory = (result['category'] as String?)?.trim();
@@ -367,9 +369,23 @@ class SyncEngine extends ChangeNotifier {
       cleaned = fb;
     }
 
-    if (cleaned.isEmpty) return 'ILS';
+    if (cleaned.isEmpty) return '';
 
     final upper = cleaned.toUpperCase();
+
+    if (upper.contains('€') || upper.contains('EUR')) return 'EUR';
+    if (upper == r'$' || upper.contains('US\$') || upper.contains('USD')) {
+      return 'USD';
+    }
+    if (upper.contains('₪') ||
+        upper.contains('NIS') ||
+        upper.contains('ILS') ||
+        upper.contains('ש"ח') ||
+        upper.contains("ש'ח") ||
+        upper.contains('שח')) {
+      return 'ILS';
+    }
+
     const mapped = {
       '₪': 'ILS',
       'ש"ח': 'ILS',
@@ -379,9 +395,17 @@ class SyncEngine extends ChangeNotifier {
       'N.I.S': 'ILS',
       'ILS': 'ILS',
       'ILS.': 'ILS',
+      r'$': 'USD',
+      'US\$': 'USD',
+      'USD': 'USD',
+      'USD.': 'USD',
+      '€': 'EUR',
+      'EUR': 'EUR',
+      'EUR.': 'EUR',
     };
 
-    return mapped[upper] ?? upper;
+    final normalized = mapped[upper] ?? upper;
+    return _allowedCurrencies.contains(normalized) ? normalized : '';
   }
 
   Future<void> _executeSheetsAppend(

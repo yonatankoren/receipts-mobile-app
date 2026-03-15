@@ -16,6 +16,8 @@ import '../services/backend_service.dart';
 import '../models/receipt_validation_exception.dart';
 
 class AppState extends ChangeNotifier {
+  static const Set<String> _allowedCurrencies = {'ILS', 'USD', 'EUR'};
+
   final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
 
@@ -168,7 +170,7 @@ class AppState extends ChangeNotifier {
         totalAmount: result['total_amount'] != null
             ? (result['total_amount'] as num).toDouble()
             : null,
-        currency: (result['currency'] as String?) ?? receipt.currency,
+        currency: _normalizeCurrency(result['currency'] as String?),
         category: result['category'] as String?,
         rawOcrText: result['raw_ocr_text'] as String?,
         overallConfidence: confMap['overall'],
@@ -273,7 +275,7 @@ class AppState extends ChangeNotifier {
         totalAmount: result['total_amount'] != null
             ? (result['total_amount'] as num).toDouble()
             : null,
-        currency: (result['currency'] as String?) ?? receipt.currency,
+        currency: _normalizeCurrency(result['currency'] as String?),
         category: result['category'] as String?,
         rawOcrText: ocrText,
         overallConfidence: confMap['overall'],
@@ -376,6 +378,47 @@ class AppState extends ChangeNotifier {
       debugPrint('AppState: failed to load expenses: $e');
     }
     notifyListeners();
+  }
+
+  String _normalizeCurrency(String? raw) {
+    String value = (raw ?? '')
+        .replaceAll(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]'), '')
+        .trim()
+        .toUpperCase();
+
+    if (value.contains('€') || value.contains('EUR')) return 'EUR';
+    if (value == r'$' || value.contains('US\$') || value.contains('USD')) return 'USD';
+    if (value.contains('₪') ||
+        value.contains('NIS') ||
+        value.contains('ILS') ||
+        value.contains('ש"ח') ||
+        value.contains("ש'ח") ||
+        value.contains('שח')) {
+      return 'ILS';
+    }
+
+    switch (value) {
+      case '₪':
+      case 'ש"ח':
+      case "ש'ח":
+      case 'שח':
+      case 'NIS':
+      case 'N.I.S':
+      case 'ILS.':
+      case 'ILS':
+        return 'ILS';
+      case r'$':
+      case 'US\$':
+      case 'USD':
+      case 'USD.':
+        return 'USD';
+      case '€':
+      case 'EUR':
+      case 'EUR.':
+        return 'EUR';
+      default:
+        return _allowedCurrencies.contains(value) ? value : '';
+    }
   }
 
   /// Add a new manual expense (no receipt)
