@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
+import '../services/backend_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/receipt_import_service.dart';
 import '../widgets/loading_indicator.dart';
@@ -45,6 +46,12 @@ class _SharedImportScreenState extends State<SharedImportScreen> {
         await _processSingleFile(appState);
       } else {
         await _processMultipleFiles(appState);
+      }
+    } on DailyLimitExceededException {
+      if (!mounted) return;
+      await _showDailyLimitDialog();
+      if (mounted) {
+        Navigator.of(context).pop();
       }
     } catch (e) {
       if (!mounted) return;
@@ -121,6 +128,49 @@ class _SharedImportScreenState extends State<SharedImportScreen> {
     if (error is ImportException) return error.messageHe;
     if (error is ReceiptValidationException) return error.messageHe;
     return 'לא הצלחנו לעבד את הקובץ. נסה שוב.';
+  }
+
+  Future<void> _showDailyLimitDialog() {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.hourglass_empty, color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('מגבלה יומית')),
+            ],
+          ),
+          content: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: const Text(
+              'ניתן לסרוק עד 20 קבלות ביום. נסה שוב מחר',
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(fontSize: 16, height: 1.4),
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('הבנתי'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override

@@ -21,7 +21,7 @@ import 'auth_service.dart';
 import 'drive_service.dart';
 import 'image_service.dart';
 import 'sheets_service.dart';
-import 'backend_service.dart';
+import 'backend_service.dart' show BackendService, DailyLimitExceededException;
 
 class SyncEngine extends ChangeNotifier {
   static const Set<String> _allowedCurrencies = {'ILS', 'USD', 'EUR'};
@@ -219,6 +219,35 @@ class SyncEngine extends ChangeNotifier {
       // earlier jobs can never make all three complete.
       if (job.jobType == JobType.sheetsAppend) {
         await _checkReceiptFullySync(job.receiptId);
+      }
+
+    } on DailyLimitExceededException {
+      // Not a transient error — don't retry today.
+      // Schedule the job for next UTC midnight when the quota resets.
+      final nowUtc = DateTime.now().toUtc();
+      final nextMidnight =
+          DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day + 1).toLocal();
+
+      debugPrint(
+        'SyncEngine: daily limit hit for ${job.receiptId} — '
+        'scheduling retry at $nextMidnight',
+      );
+
+      // Deliberately do NOT increment retryCount so the job never
+      // exhausts its max_retries just from hitting the daily quota.
+      job.status = JobStatus.failed;
+      job.errorMessage = 'rate_limited';
+      job.nextRetryAt = nextMidnight;
+      job.updatedAt = DateTime.now();
+      await _db.updateJob(job);
+
+      // Mark receipt with a distinct status so the UI can show a
+      // clear "try again tomorrow" message instead of a generic error.
+      final receipt = await _db.getReceipt(job.receiptId);
+      if (receipt != null) {
+        final updated = receipt.copyWith(status: ReceiptStatus.rateLimited);
+        await _db.updateReceipt(updated);
+        onReceiptsChanged?.call();
       }
 
     } catch (e) {

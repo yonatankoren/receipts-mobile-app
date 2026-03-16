@@ -211,7 +211,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT
-        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_count,
+        SUM(CASE WHEN status IN ('error', 'rateLimited') THEN 1 ELSE 0 END) AS error_count,
         SUM(CASE WHEN status = 'processing' AND raw_ocr_text IS NOT NULL THEN 1 ELSE 0 END) AS review_count,
         SUM(CASE WHEN status = 'reviewed' THEN 1 ELSE 0 END) AS syncing_count
       FROM receipts

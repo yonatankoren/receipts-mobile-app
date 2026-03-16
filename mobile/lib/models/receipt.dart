@@ -314,10 +314,11 @@ class Receipt {
 }
 
 enum ReceiptStatus {
-  captured,    // Photo taken, not yet processed
-  processing,  // OCR/parse in progress
-  reviewed,    // User reviewed, ready to sync
-  synced,      // Fully synced (Drive + Sheets)
-  error,       // Processing failed
+  captured,      // Photo taken, not yet processed
+  processing,    // OCR/parse in progress
+  reviewed,      // User reviewed, ready to sync
+  synced,        // Fully synced (Drive + Sheets)
+  error,         // Processing failed
+  rateLimited,   // Hit daily scan limit — will auto-retry tomorrow
 }
 

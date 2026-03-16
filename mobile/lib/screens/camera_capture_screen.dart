@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
+import '../services/backend_service.dart';
 import '../services/drive_service.dart';
 import '../services/pdf_import_service.dart';
 import '../services/receipt_import_service.dart';
@@ -223,6 +224,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         Navigator.of(context).pop();
         _showValidationFailureDialog(e);
       }
+    } on DailyLimitExceededException {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showDailyLimitDialog();
+      }
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop();
@@ -231,6 +237,49 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         );
       }
     }
+  }
+
+  void _showDailyLimitDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.hourglass_empty, color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('מגבלה יומית')),
+            ],
+          ),
+          content: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: const Text(
+              'ניתן לסרוק עד 20 קבלות ביום. נסה שוב מחר',
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.rtl,
+              style: TextStyle(fontSize: 16, height: 1.4),
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('הבנתי'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Show a user-friendly dialog when the backend rejects the image.
@@ -1079,6 +1128,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       if (mounted) {
         Navigator.of(context).pop();
         _showValidationFailureDialog(e);
+      }
+    } on DailyLimitExceededException {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showDailyLimitDialog();
       }
     } catch (e) {
       if (mounted) {

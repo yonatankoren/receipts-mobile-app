@@ -1452,6 +1452,7 @@ class _ReviewAndFixScreenState extends State<ReviewAndFixScreen> {
       ReceiptStatus.reviewed => ('נבדק', Colors.orange, Icons.check),
       ReceiptStatus.synced => ('מסונכרן', Colors.green, Icons.cloud_done),
       ReceiptStatus.error => ('שגיאה', Colors.red, Icons.error),
+      ReceiptStatus.rateLimited => ('מגבלה יומית', Colors.amber.shade700, Icons.hourglass_empty),
     };
 
     return Container(

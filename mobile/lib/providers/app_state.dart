@@ -260,6 +260,11 @@ class AppState extends ChangeNotifier {
       return updated;
     } on ReceiptValidationException {
       rethrow; // Let callers handle validation failures
+    } on DailyLimitExceededException {
+      // Over daily quota: remove this transient receipt completely so it
+      // doesn't appear in the list and user doesn't need to review it.
+      await _cleanupFailedReceipt(receiptId);
+      rethrow;
     } catch (e) {
       debugPrint('AppState: immediate processing failed: $e');
       return await _db.getReceipt(receiptId);
@@ -278,6 +283,19 @@ class AppState extends ChangeNotifier {
         }
       } catch (e) {
         debugPrint('AppState: failed to delete image for failed receipt: $e');
+      }
+
+      // Delete local PDF copy if present
+      try {
+        final pdfPath = receipt.pdfPath;
+        if (pdfPath != null && pdfPath.isNotEmpty) {
+          final pdfFile = File(pdfPath);
+          if (await pdfFile.exists()) {
+            await pdfFile.delete();
+          }
+        }
+      } catch (e) {
+        debugPrint('AppState: failed to delete PDF for failed receipt: $e');
       }
 
       // Delete associated sync jobs
@@ -363,6 +381,11 @@ class AppState extends ChangeNotifier {
 
       return updated;
     } on ReceiptValidationException {
+      rethrow;
+    } on DailyLimitExceededException {
+      // Over daily quota: remove this transient receipt completely so it
+      // doesn't appear in the list and user doesn't need to review it.
+      await _cleanupFailedReceipt(receiptId);
       rethrow;
     } catch (e) {
       debugPrint('AppState: OCR text processing failed: $e');

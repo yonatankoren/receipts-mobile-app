@@ -10,6 +10,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 import 'auth_service.dart';
 
+/// Thrown when the backend returns HTTP 429 (daily LLM quota reached).
+class DailyLimitExceededException implements Exception {
+  const DailyLimitExceededException();
+
+  @override
+  String toString() => 'DailyLimitExceededException: daily receipt limit reached';
+}
+
 class BackendService {
   static final BackendService instance = BackendService._();
   BackendService._();
@@ -76,6 +84,9 @@ class BackendService {
 
     final response = await http.Response.fromStream(streamedResponse);
 
+    if (response.statusCode == 429) {
+      throw const DailyLimitExceededException();
+    }
     if (response.statusCode != 200) {
       throw Exception(
         'Backend returned ${response.statusCode}: ${response.body}',
@@ -133,6 +144,9 @@ class BackendService {
 
     final response = await http.Response.fromStream(streamedResponse);
 
+    if (response.statusCode == 429) {
+      throw const DailyLimitExceededException();
+    }
     if (response.statusCode != 200) {
       throw Exception(
         'Backend returned ${response.statusCode}: ${response.body}',
@@ -277,6 +291,9 @@ class BackendService {
 
     final response = await http.Response.fromStream(streamedResponse);
 
+    if (response.statusCode == 429) {
+      throw const DailyLimitExceededException();
+    }
     if (response.statusCode != 200) {
       throw Exception('Parse failed: ${response.statusCode}: ${response.body}');
     }

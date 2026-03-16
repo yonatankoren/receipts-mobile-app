@@ -33,13 +33,33 @@ class _StatisticsScreenState extends State<StatisticsScreen>
   @override
   bool get wantKeepAlive => true;
 
+
+  late final AppState _appState;
+  late final VoidCallback _appStateListener;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().loadReceipts();
+      _appState = context.read<AppState>();
+      _appStateListener = () {
+        // Only reload if receipts changed (not for every notifyListeners)
+        _loadRemoteSummaryStats();
+      };
+      _appState.addListener(_appStateListener);
+      _appState.loadReceipts();
       _loadRemoteSummaryStats();
     });
+  }
+
+  @override
+  void dispose() {
+    if (mounted) {
+      try {
+        _appState.removeListener(_appStateListener);
+      } catch (_) {}
+    }
+    super.dispose();
   }
 
   Future<void> _loadRemoteSummaryStats() async {

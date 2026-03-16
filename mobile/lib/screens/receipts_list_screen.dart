@@ -114,7 +114,9 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
 
             // Split receipts into special top-blocks and normal month-grouped
             final errorReceipts = recentReceipts
-                .where((r) => r.status == ReceiptStatus.error)
+                .where((r) =>
+                    r.status == ReceiptStatus.error ||
+                    r.status == ReceiptStatus.rateLimited)
                 .toList();
             final reviewReceipts = recentReceipts
                 .where((r) =>
@@ -426,13 +428,15 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
         borderRadius: BorderRadius.circular(12),
         onTap: _isSelecting
             ? () => _toggleSelection(receipt.id)
-            : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        ReviewAndFixScreen(receiptId: receipt.id),
-                  ),
-                ),
+            : receipt.status == ReceiptStatus.rateLimited
+                ? () => _showRateLimitDialog()
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ReviewAndFixScreen(receiptId: receipt.id),
+                      ),
+                    ),
         onLongPress: _isSelecting
             ? null
             : () {
@@ -617,6 +621,8 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
         return Colors.green;
       case ReceiptStatus.error:
         return Colors.red;
+      case ReceiptStatus.rateLimited:
+        return Colors.amber.shade700;
     }
   }
 
@@ -636,6 +642,56 @@ class _ReceiptsListScreenState extends State<ReceiptsListScreen> {
 
   String _formatTimestamp(DateTime dt) {
     return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  void _showRateLimitDialog() {
+    final theme = Theme.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.hourglass_empty,
+                  color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('מגבלה יומית')),
+            ],
+          ),
+          content: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Text(
+              'ניתן לסרוק עד 20 קבלות ביום. נסה שוב מחר',
+              style: theme.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('הבנתי'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openDriveFolder(String monthKey) async {

@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import '../db/database_helper.dart';
 import '../models/receipt_validation_exception.dart';
 import '../providers/app_state.dart';
+import 'backend_service.dart';
 import 'image_service.dart';
 import 'pdf_import_service.dart';
 
@@ -90,6 +91,10 @@ class ReceiptImportService {
           onProgress: (msg) => onFileProgress?.call(i, filePaths.length, msg),
         );
         results.add(result);
+      } on DailyLimitExceededException {
+        // Quota reached should stop immediately and bubble to UI so we can
+        // show the dedicated popup right away.
+        rethrow;
       } catch (e) {
         debugPrint('ReceiptImportService: file ${i + 1} failed: $e');
       }
