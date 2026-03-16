@@ -223,6 +223,6 @@ All persistent data lives in the user’s own Google account.
 ### 📑 Google Sheets Ledger
 
 <p align="center">
-  <img src="screenshots/sheets-expenses.png" width="350"/>
-  <img src="screenshots/sheets-totals.png" width="350"/>
+  <img src="screenshots/sheets-expenses.png" width="700"/>
+  <img src="screenshots/sheets-totals.png" width="700"/>
 </p>
