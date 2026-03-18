@@ -39,7 +39,7 @@ Those tools by Google are well- established and are already used by many freelan
 
 ---
 
-### ⚡ Fast and Humen Friendly
+### ⚡ Fast and Human Friendly
 
 The workdays of a freelancer are full of action. **Managing receipts can't become a tidious task**. 
 
